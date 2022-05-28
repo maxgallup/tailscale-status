@@ -24,12 +24,11 @@ class TailscaleNode {
     this.status = _status;
     this.offersExit = _offersExit;
     this.usesExit = _usesExit;
+    this.item = new PopupMenu.PopupMenuItem(this.line);
   }
 
   get line() {
-
     var statusIcon;
-
     switch (this.status) {
       case "idle":
         statusIcon = "🟢"
@@ -46,7 +45,6 @@ class TailscaleNode {
       default:
         statusIcon = "X"
     }
-
     return statusIcon + " " + this.address + " " + this.name;
   }
 }
@@ -88,7 +86,7 @@ const MyPopup = GObject.registerClass(
         let statusItem = new PopupMenu.PopupMenuItem( statusString, {reactive : false} );
         let upItem = new PopupMenu.PopupMenuItem("Tailscale Up");
         let downItem = new PopupMenu.PopupMenuItem("Tailscale Down");
-        let nodesItem = new PopupMenu.PopupMenuSection();
+        let nodesMenu = new PopupMenu.PopupMenuSection();
         let existNodeItem = new PopupMenu.PopupSubMenuMenuItem("Exit Nodes");
 
         
@@ -99,6 +97,14 @@ const MyPopup = GObject.registerClass(
         upItem.connect('activate', () => {
           statusItem.label.text = statusString + "tailscale up";
           log("clicked: ", statusItem.label.text);
+
+          nodes.forEach( (node, index) => {
+            // nodesMenu.actor.add_child( TODO )
+            node.name += "!";
+            node.item.text = node.line;
+            log(node.item.text);
+          });
+
         });
         
         this.menu.addMenuItem(downItem, 3);
@@ -115,17 +121,17 @@ const MyPopup = GObject.registerClass(
         });
         
         this.menu.addMenuItem( new PopupMenu.PopupSeparatorMenuItem(), 4);
-        this.menu.addMenuItem(nodesItem, 5);
+        this.menu.addMenuItem(nodesMenu, 5);
         this.menu.addMenuItem( new PopupMenu.PopupSeparatorMenuItem(), 6);
         this.menu.addMenuItem(existNodeItem, 7);
         existNodeItem.menu.addMenuItem( new PopupMenu.PopupMenuItem(enabledString + 'None'), 0);
         
         nodes.forEach( (node, index) => {
-          nodesItem.actor.add_child( new PopupMenu.PopupMenuItem(node.line))
-        })
+          nodesMenu.actor.add_child( node.item );
+        });
 
-        // nodesItem.actor.add_child( new PopupMenu.PopupMenuItem('item 1') );
-        // nodesItem.actor.add_child( new PopupMenu.PopupMenuItem('item 2'), 0 );
+        // nodesMenu.actor.add_child( new PopupMenu.PopupMenuItem('item 1') );
+        // nodesMenu.actor.add_child( new PopupMenu.PopupMenuItem('item 2'), 0 );
         // existNodeItem.actor.add_child( new PopupMenu.PopupMenuItem('item 2'));
         
         // // section
