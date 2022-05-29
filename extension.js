@@ -24,7 +24,7 @@ class TailscaleNode {
     this.status = _status;
     this.offersExit = _offersExit;
     this.usesExit = _usesExit;
-    this.item = new PopupMenu.PopupMenuItem(this.line);
+    // this.item = new PopupMenu.PopupMenuItem(this.line);
   }
 
   get line() {
@@ -57,15 +57,27 @@ let nodes = [
   new TailscaleNode("linukcs", "3.1.3.1", "online", true, false)
 ];
 
-let myPopup;
+let nodesMenu;
+let exitNodeMenu;
 
 
-function refresh_nodes() {
-  
-  log("todo refresh");
+function refreshNodesMenu() {
+  nodesMenu.removeAll();
+  nodes.forEach( (node) => {
+    nodesMenu.actor.add_child( new PopupMenu.PopupMenuItem(node.line) );
+  });
 }
 
-
+function refreshExitNodesMenu() {
+  exitNodeMenu.menu.removeAll();
+  exitNodeMenu.menu.addMenuItem(new PopupMenu.PopupMenuItem('None'), 0)
+  
+  nodes.forEach( (node) => {
+    if (node.offersExit) {
+      exitNodeMenu.menu.addMenuItem(new PopupMenu.PopupMenuItem(node.name));
+    }
+  })
+}
 
 
 const MyPopup = GObject.registerClass(
@@ -86,8 +98,8 @@ const MyPopup = GObject.registerClass(
         let statusItem = new PopupMenu.PopupMenuItem( statusString, {reactive : false} );
         let upItem = new PopupMenu.PopupMenuItem("Tailscale Up");
         let downItem = new PopupMenu.PopupMenuItem("Tailscale Down");
-        let nodesMenu = new PopupMenu.PopupMenuSection();
-        let existNodeItem = new PopupMenu.PopupSubMenuMenuItem("Exit Nodes");
+        nodesMenu = new PopupMenu.PopupMenuSection();
+        exitNodeMenu = new PopupMenu.PopupSubMenuMenuItem("Exit Nodes");
 
         
         this.menu.addMenuItem(statusItem, 0);
@@ -98,12 +110,14 @@ const MyPopup = GObject.registerClass(
           statusItem.label.text = statusString + "tailscale up";
           log("clicked: ", statusItem.label.text);
 
-          nodes.forEach( (node, index) => {
-            // nodesMenu.actor.add_child( TODO )
-            node.name += "!";
-            node.item.text = node.line;
-            log(node.item.text);
-          });
+          refreshExitNodesMenu();
+
+          nodes.forEach( (node) => {
+            node.name = "suck";
+          })
+
+          refreshNodesMenu();
+          
 
         });
         
@@ -116,23 +130,22 @@ const MyPopup = GObject.registerClass(
         this.menu.connect('open-state-changed', (menu, open) => {
           if (open) {
             log("open - update nodes")
-            refresh_nodes();
           }
         });
         
         this.menu.addMenuItem( new PopupMenu.PopupSeparatorMenuItem(), 4);
         this.menu.addMenuItem(nodesMenu, 5);
         this.menu.addMenuItem( new PopupMenu.PopupSeparatorMenuItem(), 6);
-        this.menu.addMenuItem(existNodeItem, 7);
-        existNodeItem.menu.addMenuItem( new PopupMenu.PopupMenuItem(enabledString + 'None'), 0);
+        this.menu.addMenuItem(exitNodeMenu, 7);
+        exitNodeMenu.menu.addMenuItem( new PopupMenu.PopupMenuItem('None'), 0); // setOrnament(1)
         
         nodes.forEach( (node, index) => {
-          nodesMenu.actor.add_child( node.item );
+          nodesMenu.actor.add_child( new PopupMenu.PopupMenuItem(node.line) );
         });
 
         // nodesMenu.actor.add_child( new PopupMenu.PopupMenuItem('item 1') );
         // nodesMenu.actor.add_child( new PopupMenu.PopupMenuItem('item 2'), 0 );
-        // existNodeItem.actor.add_child( new PopupMenu.PopupMenuItem('item 2'));
+        // exitNodeMenu.actor.add_child( new PopupMenu.PopupMenuItem('item 2'));
         
         // // section
         // let popupMenuSection = new PopupMenu.PopupMenuSection();
