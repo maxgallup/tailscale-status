@@ -65,7 +65,6 @@ function parseOutput() {
     var splitLine = line.match(/\S+/g);
     var offersExit = splitLine.length >= 6;
     var usesExit = (offersExit) ? splitLine[5] == "exit" : false;
-    log(splitLine[1], splitLine[0], splitLine[4], offersExit, usesExit);
     nodes.push( new TailscaleNode(splitLine[1], splitLine[0], splitLine[4], offersExit, usesExit))
   })
 
@@ -126,6 +125,7 @@ function refreshExitNodesMenu() {
 
 function enableTailscale() {
   // if (run_cmd(["pkexec", "tailscale", "up"])) {
+    // if (run_cmd([ "sleep", "1", "&&", "echo", "hi", "&&", "sleep", "1", "&&", "echo", "hi" ])) {
   if (run_cmd(["sleep", "5"])) {
     setUpStatus();
   } else {
@@ -222,41 +222,52 @@ const MyPopup = GObject.registerClass(
 let timeout;
 
 
-// let loop = GLib.MainLoop.new(null, false);
+let loop = GLib.MainLoop.new(null, false);
 
+
+function readOutput(stdout) {
+  stdout.read_line_async(GLib.PRIORITY_LOW, null, (stdout, res) => {
+    try {
+      let line = stdout.read_line_finish_utf8(res)[0];
+
+      if (line !== null) {
+        log(`READ: ${line}`);
+        readOutput(stdout);
+      }
+    } catch (e) {
+      logError(e);
+    }
+  });
+}
 
 function run_cmd(argv) {
-  log(">>>");
-
-  var args = ['/bin/bash', '-c']; // not the way to go
-  args = args.concat(argv);
-
   try {
-    let proc = Gio.Subprocess.new(
-      args, Gio.SubprocessFlags.STDOUT_PIPE | Gio.SubprocessFlags.STDERR_PIPE
-    );
-    proc.communicate_utf8_async(null, null, (proc, res) => {
+    let proc = Gio.Subprocess.new( argv, Gio.SubprocessFlags.STDOUT_PIPE );
+
+    // Watch for the process to exit, like normal
+    proc.wait_async(null, (proc, res) => {
       try {
-        let [, stdout, stderr] = proc.communicate_utf8_finish(res);
-        if (proc.get_successful()) {
-          output = stdout;
-        } else {
-          output = "error"
-          return false;
-        }
+        proc.wait_finish(res);
       } catch (e) {
         logError(e);
-        return false;
+      } finally {
+        loop.quit();
       }
-  });
+    });
+
+    
+    let stdoutStream = new Gio.DataInputStream({
+      base_stream: proc.get_stdout_pipe(),
+      close_base_stream: true
+    });
+    readOutput(stdoutStream);
   } catch (e) {
     logError(e);
   }
-    
 
-
-  return output != "error";
+  loop.run();
 }
+
 
 
 function init () {
@@ -264,15 +275,11 @@ function init () {
 }
 
 function enable () {
-    myPopup = new MyPopup();
-    Main.panel.addToStatusArea('myPopup', myPopup, 1);
-
-
-
-    
+  myPopup = new MyPopup();
+  Main.panel.addToStatusArea('myPopup', myPopup, 1);
 }
 
 function disable () {
-    myPopup.destroy();
+  myPopup.destroy();
 }
 
