@@ -56,9 +56,8 @@ let statusItem;
 let output;
 
 function parseOutput() {
-  statusItem.label.text = statusString + "up";
-
   
+
   var lines = output.split("\n");
   lines.pop();
   nodes = []
@@ -70,15 +69,20 @@ function parseOutput() {
     nodes.push( new TailscaleNode(splitLine[1], splitLine[0], splitLine[4], offersExit, usesExit))
   })
 
+  setUpStatus();
+}
+
+function setDownStatus() {
+  statusItem.label.text = statusString + "down";
+}
+
+function setUpStatus() {
+  statusItem.label.text = statusString + "up";
   nodes.forEach( (node) => {
     if (node.usesExit) {
       statusItem.label.text = statusString + "up with exit-node: " + node.name
     }
   })
-}
-
-function setDownStatus() {
-  statusItem.label.text = statusString + "down";
 }
 
 function queryTailScaleStatus() {
@@ -120,6 +124,14 @@ function refreshExitNodesMenu() {
   exitNodeMenu.menu.addMenuItem(noneItem, 0);
 }
 
+function enableTailscale() {
+  // if (run_cmd(["pkexec", "tailscale", "up"])) {
+  if (run_cmd(["sleep", "5"])) {
+    setUpStatus();
+  } else {
+    setDownStatus();
+  }
+}
 
 const MyPopup = GObject.registerClass(
     class MyPopup extends PanelMenu.Button {
@@ -148,6 +160,11 @@ const MyPopup = GObject.registerClass(
         this.menu.addMenuItem(upItem, 2);
         upItem.connect('activate', () => {
           log("TODO: ", statusItem.label.text);
+          enableTailscale();
+          queryTailScaleStatus();
+          refreshExitNodesMenu();
+          refreshNodesMenu();
+
         });
         
         this.menu.addMenuItem(downItem, 3);
@@ -205,39 +222,40 @@ const MyPopup = GObject.registerClass(
 let timeout;
 
 
-let loop = GLib.MainLoop.new(null, false);
+// let loop = GLib.MainLoop.new(null, false);
 
 
 function run_cmd(argv) {
-    try {
-        let proc = Gio.Subprocess.new(
-            argv,
-            Gio.SubprocessFlags.STDOUT_PIPE | Gio.SubprocessFlags.STDERR_PIPE
-        );
-        proc.communicate_utf8_async(null, null, (proc, res) => {
-            try {
-                let [, stdout, stderr] = proc.communicate_utf8_finish(res);
-                if (proc.get_successful()) {
-                    output = stdout;
-                } else {
-                    output = "error"
-                    return false;
-                }
-            } catch (e) {
-                logError(e);
-                return false;
-            } finally {
-                loop.quit();
-            }
-        });
-    } catch (e) {
+  log(">>>");
+
+  var args = ['/bin/bash', '-c']; // not the way to go
+  args = args.concat(argv);
+
+  try {
+    let proc = Gio.Subprocess.new(
+      args, Gio.SubprocessFlags.STDOUT_PIPE | Gio.SubprocessFlags.STDERR_PIPE
+    );
+    proc.communicate_utf8_async(null, null, (proc, res) => {
+      try {
+        let [, stdout, stderr] = proc.communicate_utf8_finish(res);
+        if (proc.get_successful()) {
+          output = stdout;
+        } else {
+          output = "error"
+          return false;
+        }
+      } catch (e) {
         logError(e);
         return false;
-    }
+      }
+  });
+  } catch (e) {
+    logError(e);
+  }
     
-    loop.run();
 
-    return output != "error";
+
+  return output != "error";
 }
 
 
@@ -257,3 +275,4 @@ function enable () {
 function disable () {
     myPopup.destroy();
 }
+
