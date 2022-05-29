@@ -13,7 +13,6 @@ const Me = imports.misc.extensionUtils.getCurrentExtension();
 
 let testString = "some status";
 let statusString = "Status: ";
-// let enabledString = "⚪";
 let enabledString = "✅ ";
 let disabledString = "❌";
 
@@ -24,16 +23,15 @@ class TailscaleNode {
     this.status = _status;
     this.offersExit = _offersExit;
     this.usesExit = _usesExit;
-    // this.item = new PopupMenu.PopupMenuItem(this.line);
   }
 
   get line() {
     var statusIcon;
     switch (this.status) {
-      case "idle":
+      case "idle;":
         statusIcon = "🟢"
         break;
-      case "online":
+      case "active;":
         statusIcon = "🟢"
         break;
       case "offline":
@@ -50,16 +48,46 @@ class TailscaleNode {
 }
 
 
-let nodes = [
-  new TailscaleNode("test", "6.9.6.9", "online", false, false),
-  new TailscaleNode("puter", "1.1.1.1", "-", false, false),
-  new TailscaleNode("boontoo", "2.1.2.1", "offline", false, false),
-  new TailscaleNode("linukcs", "3.1.3.1", "online", true, false)
-];
+let nodes = [];
 
 let nodesMenu;
 let exitNodeMenu;
+let statusItem;
+let output;
 
+function parseOutput() {
+  statusItem.label.text = statusString + "up";
+
+  
+  var lines = output.split("\n");
+  lines.pop();
+  nodes = []
+  lines.forEach( (line) => {
+    var splitLine = line.match(/\S+/g);
+    var offersExit = splitLine.length >= 6;
+    var usesExit = (offersExit) ? splitLine[5] == "exit" : false;
+    log(splitLine[1], splitLine[0], splitLine[4], offersExit, usesExit);
+    nodes.push( new TailscaleNode(splitLine[1], splitLine[0], splitLine[4], offersExit, usesExit))
+  })
+
+  nodes.forEach( (node) => {
+    if (node.usesExit) {
+      statusItem.label.text = statusString + "up with exit-node: " + node.name
+    }
+  })
+}
+
+function setDownStatus() {
+  statusItem.label.text = statusString + "down";
+}
+
+function queryTailScaleStatus() {
+  if (run_cmd(["tailscale", "status"])) {
+    parseOutput();
+  } else {
+    setDownStatus();
+  }
+}
 
 function refreshNodesMenu() {
   nodesMenu.removeAll();
@@ -70,13 +98,26 @@ function refreshNodesMenu() {
 
 function refreshExitNodesMenu() {
   exitNodeMenu.menu.removeAll();
-  exitNodeMenu.menu.addMenuItem(new PopupMenu.PopupMenuItem('None'), 0)
+
+  var uses_exit = false;
   
   nodes.forEach( (node) => {
     if (node.offersExit) {
-      exitNodeMenu.menu.addMenuItem(new PopupMenu.PopupMenuItem(node.name));
+      var item = new PopupMenu.PopupMenuItem(node.name)
+      if (node.usesExit) {
+        item.setOrnament(1);
+        exitNodeMenu.menu.addMenuItem(item);
+        uses_exit = true;
+      } else {
+        item.setOrnament(0);
+        exitNodeMenu.menu.addMenuItem(item);
+      }
     }
   })
+
+  var noneItem = new PopupMenu.PopupMenuItem('None');
+  (uses_exit) ? noneItem.setOrnament(0) : noneItem.setOrnament(1);
+  exitNodeMenu.menu.addMenuItem(noneItem, 0);
 }
 
 
@@ -88,14 +129,13 @@ const MyPopup = GObject.registerClass(
         super._init(0);
 
         let icon = new St.Icon({
-          // icon_name : 'security-low-symbolic',
           gicon : Gio.icon_new_for_string( Me.dir.get_path() + '/icons/big2.svg' ),
           style_class : 'system-status-icon',
         });
         
         this.add_child(icon);
 
-        let statusItem = new PopupMenu.PopupMenuItem( statusString, {reactive : false} );
+        statusItem = new PopupMenu.PopupMenuItem( statusString, {reactive : false} );
         let upItem = new PopupMenu.PopupMenuItem("Tailscale Up");
         let downItem = new PopupMenu.PopupMenuItem("Tailscale Down");
         nodesMenu = new PopupMenu.PopupMenuSection();
@@ -107,29 +147,19 @@ const MyPopup = GObject.registerClass(
 
         this.menu.addMenuItem(upItem, 2);
         upItem.connect('activate', () => {
-          statusItem.label.text = statusString + "tailscale up";
-          log("clicked: ", statusItem.label.text);
-
-          refreshExitNodesMenu();
-
-          nodes.forEach( (node) => {
-            node.name = "suck";
-          })
-
-          refreshNodesMenu();
-          
-
+          log("TODO: ", statusItem.label.text);
         });
         
         this.menu.addMenuItem(downItem, 3);
         downItem.connect('activate', () => {
-          statusItem.label.text = statusString + "tailscale down";
-          log("clicked: ", statusItem.label.text);
+          log("TODO: ", statusItem.label.text);
         });
         
         this.menu.connect('open-state-changed', (menu, open) => {
           if (open) {
-            log("open - update nodes")
+            queryTailScaleStatus();
+            refreshExitNodesMenu();
+            refreshNodesMenu();
           }
         });
         
@@ -173,7 +203,7 @@ const MyPopup = GObject.registerClass(
 
 
 let timeout;
-let output;
+
 
 let loop = GLib.MainLoop.new(null, false);
 
@@ -189,23 +219,25 @@ function run_cmd(argv) {
                 let [, stdout, stderr] = proc.communicate_utf8_finish(res);
                 if (proc.get_successful()) {
                     output = stdout;
-                    log(">>>>>>>", stdout);
                 } else {
-                    throw new Error(stderr);
+                    output = "error"
+                    return false;
                 }
             } catch (e) {
                 logError(e);
+                return false;
             } finally {
                 loop.quit();
             }
         });
     } catch (e) {
         logError(e);
+        return false;
     }
     
     loop.run();
 
-    return true;
+    return output != "error";
 }
 
 
