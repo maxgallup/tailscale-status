@@ -224,48 +224,38 @@ let timeout;
 
 let loop = GLib.MainLoop.new(null, false);
 
-
-function readOutput(stdout) {
-  stdout.read_line_async(GLib.PRIORITY_LOW, null, (stdout, res) => {
-    try {
-      let line = stdout.read_line_finish_utf8(res)[0];
-
-      if (line !== null) {
-        log(`READ: ${line}`);
-        readOutput(stdout);
-      }
-    } catch (e) {
-      logError(e);
-    }
-  });
-}
-
 function run_cmd(argv) {
   try {
-    let proc = Gio.Subprocess.new( argv, Gio.SubprocessFlags.STDOUT_PIPE );
-
-    // Watch for the process to exit, like normal
-    proc.wait_async(null, (proc, res) => {
+    let proc = Gio.Subprocess.new(
+      argv,
+      Gio.SubprocessFlags.STDOUT_PIPE | Gio.SubprocessFlags.STDERR_PIPE
+    );
+    proc.communicate_utf8_async(null, null, (proc, res) => {
       try {
-        proc.wait_finish(res);
+        let [, stdout, stderr] = proc.communicate_utf8_finish(res);
+        if (proc.get_successful()) {
+          output = stdout;
+        } else {
+          output = "error"
+          return false;
+        }
       } catch (e) {
         logError(e);
+        return false;
       } finally {
         loop.quit();
       }
     });
-
-    
-    let stdoutStream = new Gio.DataInputStream({
-      base_stream: proc.get_stdout_pipe(),
-      close_base_stream: true
-    });
-    readOutput(stdoutStream);
   } catch (e) {
     logError(e);
+    return false;
   }
 
+  log("before " + argv);
   loop.run();
+  log("after " + argv);
+
+  return output != "error";
 }
 
 
