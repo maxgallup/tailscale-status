@@ -66,10 +66,10 @@ function setDownStatus() {
 }
 
 function setUpStatus() {
-    statusItem.label.text = statusString + "up";
+    statusItem.label.text = statusString + "up (no exit-node)";
     nodes.forEach( (node) => {
         if (node.usesExit) {
-        statusItem.label.text = statusString + "up with exit-node: " + node.name
+        statusItem.label.text = statusString + "up (exit-node: " + node.name + ")";
         }
     })
 }
@@ -87,6 +87,9 @@ function refreshExitNodesMenu() {
     nodes.forEach( (node) => {
         if (node.offersExit) {
         var item = new PopupMenu.PopupMenuItem(node.name)
+        item.connect('activate', () => {
+            cmdTailscaleUpWithExit(item.label.text);
+        });
         if (node.usesExit) {
             item.setOrnament(1);
             exitNodeMenu.menu.addMenuItem(item);
@@ -99,10 +102,107 @@ function refreshExitNodesMenu() {
     })
     
     var noneItem = new PopupMenu.PopupMenuItem('None');
+    noneItem.connect('activate', () => {
+        cmdTailscaleUpWithExit("");
+    });
     (uses_exit) ? noneItem.setOrnament(0) : noneItem.setOrnament(1);
     exitNodeMenu.menu.addMenuItem(noneItem, 0);
 }
 
+
+
+
+function cmdTailscaleStatus() {
+    try {
+        let proc = Gio.Subprocess.new(
+            ["tailscale", "status"],
+            Gio.SubprocessFlags.STDOUT_PIPE | Gio.SubprocessFlags.STDERR_PIPE
+        );
+        proc.communicate_utf8_async(null, null, (proc, res) => {
+            try {
+                let [, stdout, stderr] = proc.communicate_utf8_finish(res);
+                if (proc.get_successful()) {
+                    parseOutput(stdout);
+                    setUpStatus();
+                    refreshExitNodesMenu();
+                    refreshNodesMenu();
+                } else {
+                    setDownStatus();
+                    refreshExitNodesMenu();
+                    refreshNodesMenu();
+                }
+            } catch (e) {
+                logError(e);
+            }
+        });
+    } catch (e) {
+        logError(e);
+    }
+}
+
+function cmdTailscaleUpWithExit(name) {
+    try {
+        let proc = Gio.Subprocess.new(
+            ["pkexec", "tailscale", "up", "--exit-node=" + name],
+            Gio.SubprocessFlags.STDOUT_PIPE | Gio.SubprocessFlags.STDERR_PIPE
+        );
+        proc.communicate_utf8_async(null, null, (proc, res) => {
+            try {
+                let [, stdout, stderr] = proc.communicate_utf8_finish(res);
+                if (!proc.get_successful()) {
+                    log("tailscale up failed")
+                }
+            } catch (e) {
+                logError(e);
+            }
+        });
+    } catch (e) {
+        logError(e);
+    }
+}
+
+function cmdTailscaleUp() {
+    try {
+        let proc = Gio.Subprocess.new(
+            ["pkexec", "tailscale", "up"],
+            Gio.SubprocessFlags.STDOUT_PIPE | Gio.SubprocessFlags.STDERR_PIPE
+        );
+        proc.communicate_utf8_async(null, null, (proc, res) => {
+            try {
+                let [, stdout, stderr] = proc.communicate_utf8_finish(res);
+                if (!proc.get_successful()) {
+                    log("tailscale up failed")
+                }
+            } catch (e) {
+                logError(e);
+            }
+        });
+    } catch (e) {
+        logError(e);
+    }
+}
+
+function cmdTailscaleDown() {
+    try {
+        let proc = Gio.Subprocess.new(
+            ["pkexec", "tailscale", "down"],
+            Gio.SubprocessFlags.STDOUT_PIPE | Gio.SubprocessFlags.STDERR_PIPE
+        );
+        proc.communicate_utf8_async(null, null, (proc, res) => {
+            try {
+                let [, stdout, stderr] = proc.communicate_utf8_finish(res);
+                nodes = [];
+                if (!proc.get_successful()) {
+                    log("tailscale down failed")
+                }
+            } catch (e) {
+                logError(e);
+            }
+        });
+    } catch (e) {
+        logError(e);
+    }
+}
 
 
 const TailscalePopup = GObject.registerClass(
@@ -131,17 +231,17 @@ const TailscalePopup = GObject.registerClass(
 
             this.menu.addMenuItem(upItem, 2);
             upItem.connect('activate', () => {
-                this.cmdTailscaleUp();
+                cmdTailscaleUp();
             });
             
             this.menu.addMenuItem(downItem, 3);
             downItem.connect('activate', () => {
-                this.cmdTailscaleDown();
+                cmdTailscaleDown();
             });
             
             this.menu.connect('open-state-changed', (menu, open) => {
                 if (open) {
-                this.cmdTailscaleStatus();
+                    cmdTailscaleStatus();
                 }
             });
             
@@ -149,82 +249,10 @@ const TailscalePopup = GObject.registerClass(
             this.menu.addMenuItem(nodesMenu, 5);
             this.menu.addMenuItem( new PopupMenu.PopupSeparatorMenuItem(), 6);
             this.menu.addMenuItem(exitNodeMenu, 7);
-            exitNodeMenu.menu.addMenuItem( new PopupMenu.PopupMenuItem('None'), 0); // setOrnament(1)
-            
+
             nodes.forEach( (node) => {
                 nodesMenu.actor.add_child( new PopupMenu.PopupMenuItem(node.line) );
             });
-        }
-
-        cmdTailscaleStatus() {
-            try {
-                let proc = Gio.Subprocess.new(
-                    ["tailscale", "status"],
-                    Gio.SubprocessFlags.STDOUT_PIPE | Gio.SubprocessFlags.STDERR_PIPE
-                );
-                proc.communicate_utf8_async(null, null, (proc, res) => {
-                    try {
-                        let [, stdout, stderr] = proc.communicate_utf8_finish(res);
-                        if (proc.get_successful()) {
-                            parseOutput(stdout);
-                            setUpStatus();
-                            refreshExitNodesMenu();
-                            refreshNodesMenu();
-                        } else {
-                            setDownStatus();
-                            refreshExitNodesMenu();
-                            refreshNodesMenu();
-                        }
-                    } catch (e) {
-                        logError(e);
-                    }
-                });
-            } catch (e) {
-                logError(e);
-            }
-        }
-
-        cmdTailscaleUp() {
-            try {
-                let proc = Gio.Subprocess.new(
-                    ["pkexec", "tailscale", "up"],
-                    Gio.SubprocessFlags.STDOUT_PIPE | Gio.SubprocessFlags.STDERR_PIPE
-                );
-                proc.communicate_utf8_async(null, null, (proc, res) => {
-                    try {
-                        let [, stdout, stderr] = proc.communicate_utf8_finish(res);
-                        if (!proc.get_successful()) {
-                            log("tailscale up failed")
-                        }
-                    } catch (e) {
-                        logError(e);
-                    }
-                });
-            } catch (e) {
-                logError(e);
-            }
-        }
-
-        cmdTailscaleDown() {
-            try {
-                let proc = Gio.Subprocess.new(
-                    ["pkexec", "tailscale", "down"],
-                    Gio.SubprocessFlags.STDOUT_PIPE | Gio.SubprocessFlags.STDERR_PIPE
-                );
-                proc.communicate_utf8_async(null, null, (proc, res) => {
-                    try {
-                        let [, stdout, stderr] = proc.communicate_utf8_finish(res);
-                        nodes = [];
-                        if (!proc.get_successful()) {
-                            log("tailscale down failed")
-                        }
-                    } catch (e) {
-                        logError(e);
-                    }
-                });
-            } catch (e) {
-                logError(e);
-            }
         }
     }
 );
