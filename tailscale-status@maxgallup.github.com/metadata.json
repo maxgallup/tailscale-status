@@ -1,5 +1,5 @@
 {
-    "description": "Manage Tailscale connections and check status from desktop",
+    "description": "Manage Tailscale connections and check status from desktop read more at https://github.com/maxgallup/tailscale-status/blob/main/README.md",
     "name": "Tailscale Status",
     "shell-version" : [
         "42"

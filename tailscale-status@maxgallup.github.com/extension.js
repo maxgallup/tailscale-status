@@ -216,7 +216,7 @@ const TailscalePopup = GObject.registerClass(
             super._init(0);
 
             let icon = new St.Icon({
-                gicon : Gio.icon_new_for_string( Me.dir.get_path() + '/icons/big2.svg' ),
+                gicon : Gio.icon_new_for_string( Me.dir.get_path() + '/icon.svg' ),
                 style_class : 'system-status-icon',
             });
             
