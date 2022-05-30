@@ -74,7 +74,7 @@ function sortNodes(a, b) {
     if (a.isSelf == true && b.isSelf == false) {
         return -1;
     }
-    
+
     if (a.online == true && b.online == true) {
         return 0;
     } else if (a.online == true && b.online == false) {

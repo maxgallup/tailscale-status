@@ -1,106 +1,12 @@
-<?xml version="1.0" encoding="UTF-8" standalone="no"?>
-<!-- Created with Inkscape (http://www.inkscape.org/) -->
-
-<svg
-   width="700mm"
-   height="700mm"
-   viewBox="0 0 700 700"
-   version="1.1"
-   id="svg5"
-   inkscape:version="1.2 (dc2aedaf03, 2022-05-15)"
-   sodipodi:docname="big2.svg"
-   xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape"
-   xmlns:sodipodi="http://sodipodi.sourceforge.net/DTD/sodipodi-0.dtd"
-   xmlns="http://www.w3.org/2000/svg"
-   xmlns:svg="http://www.w3.org/2000/svg">
-  <sodipodi:namedview
-     id="namedview7"
-     pagecolor="#ffffff"
-     bordercolor="#000000"
-     borderopacity="0.25"
-     inkscape:showpageshadow="2"
-     inkscape:pageopacity="0.0"
-     inkscape:pagecheckerboard="0"
-     inkscape:deskcolor="#d1d1d1"
-     inkscape:document-units="mm"
-     showgrid="false"
-     inkscape:zoom="0.25"
-     inkscape:cx="604"
-     inkscape:cy="1182"
-     inkscape:window-width="1896"
-     inkscape:window-height="1034"
-     inkscape:window-x="12"
-     inkscape:window-y="34"
-     inkscape:window-maximized="0"
-     inkscape:current-layer="layer1" />
-  <defs
-     id="defs2" />
-  <g
-     inkscape:label="Layer 1"
-     inkscape:groupmode="layer"
-     id="layer1">
-    <rect
-       style="fill:#202020;fill-opacity:1;stroke-width:0.617364"
-       id="rect637"
-       width="700"
-       height="700"
-       x="-1.4210855e-14"
-       y="-1.4210855e-14"
-       rx="160"
-       ry="160" />
-    <circle
-       style="fill:#dfdfdf;fill-opacity:1;stroke-width:0.852603"
-       id="path3711-2"
-       cx="350"
-       cy="550"
-       r="75" />
-    <circle
-       style="fill:#dfdfdf;fill-opacity:1;stroke-width:0.852603"
-       id="path3711-3"
-       cx="550"
-       cy="350"
-       r="75" />
-    <circle
-       style="fill:#808080;fill-opacity:1;stroke-width:0.852603"
-       id="path3711-9-0"
-       cx="550"
-       cy="150"
-       r="75" />
-    <circle
-       style="fill:#808080;fill-opacity:1;stroke-width:0.852603"
-       id="path3711-9"
-       cx="350"
-       cy="150"
-       r="75" />
-    <circle
-       style="fill:#808080;fill-opacity:1;stroke-width:0.852603"
-       id="path3711-9-9"
-       cx="550"
-       cy="550"
-       r="75" />
-    <circle
-       style="fill:#808080;fill-opacity:1;stroke-width:0.852603"
-       id="path3711-9-22"
-       cx="150"
-       cy="550"
-       r="75" />
-    <circle
-       style="fill:#808080;fill-opacity:1;stroke-width:0.852603"
-       id="path3711-9-2"
-       cx="150"
-       cy="150"
-       r="75" />
-    <circle
-       style="fill:#dfdfdf;fill-opacity:1;stroke-width:0.852603"
-       id="path3711"
-       cx="350"
-       cy="350"
-       r="75" />
-    <circle
-       style="fill:#dfdfdf;fill-opacity:1;stroke-width:0.852603"
-       id="path3711-5"
-       cx="150"
-       cy="350"
-       r="75" />
-  </g>
+<svg width="64" height="64" viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg">
+<rect width="64" height="64" rx="14" fill="#232325"/>
+<circle cx="16.25" cy="32" r="5.25" fill="#FAF8F6"/>
+<circle cx="32" cy="32" r="5.25" fill="#FAF8F6"/>
+<circle opacity="0.4" cx="16.25" cy="47.75" r="5.25" fill="#FAF8F6"/>
+<circle opacity="0.4" cx="47.75" cy="47.75" r="5.25" fill="#FAF8F6"/>
+<circle cx="32" cy="47.75" r="5.25" fill="#FAF8F6"/>
+<circle cx="47.75" cy="32" r="5.25" fill="#FAF8F6"/>
+<circle opacity="0.4" cx="16.25" cy="16.25" r="5.25" fill="#FAF8F6"/>
+<circle opacity="0.4" cx="32" cy="16.25" r="5.25" fill="#FAF8F6"/>
+<circle opacity="0.4" cx="47.75" cy="16.25" r="5.25" fill="#FAF8F6"/>
 </svg>
