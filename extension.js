@@ -77,7 +77,11 @@ function setUpStatus() {
 function refreshNodesMenu() {
     nodesMenu.removeAll();
     nodes.forEach( (node) => {
-        nodesMenu.actor.add_child( new PopupMenu.PopupMenuItem(node.line) );
+        let item = new PopupMenu.PopupMenuItem(node.line)
+        item.connect('activate', () => {
+            St.Clipboard.get_default().set_text(St.ClipboardType.CLIPBOARD, node.address);
+        });
+        nodesMenu.actor.add_child( item );
     });
 }
 
@@ -108,8 +112,6 @@ function refreshExitNodesMenu() {
     (uses_exit) ? noneItem.setOrnament(0) : noneItem.setOrnament(1);
     exitNodeMenu.menu.addMenuItem(noneItem, 0);
 }
-
-
 
 
 function cmdTailscaleStatus() {
@@ -203,7 +205,6 @@ function cmdTailscaleDown() {
         logError(e);
     }
 }
-
 
 const TailscalePopup = GObject.registerClass(
     class TailscalePopup extends PanelMenu.Button {
