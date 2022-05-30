@@ -5,6 +5,6 @@
         "42"
     ],
     "url" : "https://github.com/maxgallup/tailscale-status",
-    "uuid" : "tailscale@maxgallup.github.com",
+    "uuid" : "tailscale-status@maxgallup.github.com",
     "version" : 1
 }
