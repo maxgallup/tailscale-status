@@ -14,31 +14,23 @@ const disabledString = "❌";
 const ownConnectionString = "💻";
 
 class TailscaleNode {
-    constructor(_name, _address, _status, _offersExit, _usesExit) {
+    constructor(_name, _address, _online, _offersExit, _usesExit, _isSelf) {
         this.name = _name;
         this.address = _address;
-        this.status = _status;
+        this.online = _online;
         this.offersExit = _offersExit;
         this.usesExit = _usesExit;
+        this.isSelf = _isSelf;
     }
 
     get line() {
         var statusIcon;
-        switch (this.status) {
-        case "idle;":
-            statusIcon = enabledString;
-            break;
-        case "active;":
-            statusIcon = enabledString;
-            break;
-        case "offline":
-            statusIcon = disabledString;
-            break;
-        case "-":
+        if (this.isSelf) {
             statusIcon = ownConnectionString;
-            break;
-        default:
-            statusIcon = "X"
+        } else if (this.online) {
+            statusIcon = enabledString;
+        } else {
+            statusIcon = disabledString;
         }
         return statusIcon + " " + this.address + " " + this.name;
     }
@@ -51,29 +43,66 @@ let exitNodeMenu;
 let statusItem;
 
 
-function parseOutput(output) {
-    var lines = output.split("\n");
-    lines.pop();
-    nodes = []
-    lines.forEach( (line) => {
-        var splitLine = line.match(/\S+/g);
-        var offersExit = splitLine.length >= 6;
-        var usesExit = (offersExit) ? splitLine[5] == "exit" : false;
-        nodes.push( new TailscaleNode(splitLine[1], splitLine[0], splitLine[4], offersExit, usesExit))
-    })
+function extractNodeInfo(json) {
+    nodes = [];
+
+    var me = json.Self;
+    nodes.push(new TailscaleNode(
+        me.HostName,
+        me.TailscaleIPs[0],
+        me.Online,
+        me.ExitNodeOption,
+        me.ExitNode,
+        true
+    ));
+    
+    for (let p in json.Peer) {
+        var n = json.Peer[p];
+        nodes.push(new TailscaleNode(
+            n.HostName,
+            n.TailscaleIPs[0],
+            n.Online,
+            n.ExitNodeOption,
+            n.ExitNode,
+            false
+        ));
+    }
+    nodes.sort(sortNodes)
 }
 
-function setDownStatus() {
-    statusItem.label.text = statusString + "down";
+function sortNodes(a, b) {
+    if (a.isSelf == true && b.isSelf == false) {
+        return -1;
+    }
+    
+    if (a.online == true && b.online == true) {
+        return 0;
+    } else if (a.online == true && b.online == false) {
+        return -1;
+    } else if (a.online == false && b.online == true) {
+        return 1;
+    } else if (a.online == false && b.online == false) {
+        return 0;
+    }
 }
 
-function setUpStatus() {
-    statusItem.label.text = statusString + "up (no exit-node)";
-    nodes.forEach( (node) => {
-        if (node.usesExit) {
-        statusItem.label.text = statusString + "up (exit-node: " + node.name + ")";
-        }
-    })
+function setStatus(json) {
+    switch (json.BackendState) {
+        case "Running":
+            statusItem.label.text = statusString + "up (no exit-node)";
+            nodes.forEach( (node) => {
+                if (node.usesExit) {
+                statusItem.label.text = statusString + "up (exit-node: " + node.name + ")";
+                }
+            })
+            break;
+        case "Stopped":
+            statusItem.label.text = statusString + "down";
+            nodes = [];
+            break;
+        default:
+            log("Error: unknown state");
+    }
 }
 
 function refreshNodesMenu() {
@@ -119,19 +148,16 @@ function refreshExitNodesMenu() {
 function cmdTailscaleStatus() {
     try {
         let proc = Gio.Subprocess.new(
-            ["tailscale", "status"],
+            ["tailscale", "status", "--json"],
             Gio.SubprocessFlags.STDOUT_PIPE | Gio.SubprocessFlags.STDERR_PIPE
         );
         proc.communicate_utf8_async(null, null, (proc, res) => {
             try {
                 let [, stdout, stderr] = proc.communicate_utf8_finish(res);
                 if (proc.get_successful()) {
-                    parseOutput(stdout);
-                    setUpStatus();
-                    refreshExitNodesMenu();
-                    refreshNodesMenu();
-                } else {
-                    setDownStatus();
+                    const j = JSON.parse(stdout);
+                    extractNodeInfo(j);
+                    setStatus(j);
                     refreshExitNodesMenu();
                     refreshNodesMenu();
                 }
@@ -195,7 +221,6 @@ function cmdTailscaleDown() {
         proc.communicate_utf8_async(null, null, (proc, res) => {
             try {
                 let [, stdout, stderr] = proc.communicate_utf8_finish(res);
-                nodes = [];
                 if (!proc.get_successful()) {
                     log("tailscale down failed")
                 }
