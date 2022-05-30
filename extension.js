@@ -53,9 +53,9 @@ let nodes = [];
 let nodesMenu;
 let exitNodeMenu;
 let statusItem;
-let output;
+// let output;
 
-function parseOutput() {
+function parseOutput(output) {
   
 
   var lines = output.split("\n");
@@ -67,8 +67,6 @@ function parseOutput() {
     var usesExit = (offersExit) ? splitLine[5] == "exit" : false;
     nodes.push( new TailscaleNode(splitLine[1], splitLine[0], splitLine[4], offersExit, usesExit))
   })
-
-  setUpStatus();
 }
 
 function setDownStatus() {
@@ -85,11 +83,14 @@ function setUpStatus() {
 }
 
 function queryTailScaleStatus() {
-  if (run_cmd(["tailscale", "status"])) {
-    parseOutput();
-  } else {
-    setDownStatus();
-  }
+  run(["tailscale", "status"]);
+  log("after status run command");
+  // if (output != "error") {
+    //   parseOutput();
+    //   setUpStatus();
+    // } else {
+  //   setDownStatus();
+  // }
 }
 
 function refreshNodesMenu() {
@@ -101,7 +102,7 @@ function refreshNodesMenu() {
 
 function refreshExitNodesMenu() {
   exitNodeMenu.menu.removeAll();
-
+  
   var uses_exit = false;
   
   nodes.forEach( (node) => {
@@ -117,7 +118,7 @@ function refreshExitNodesMenu() {
       }
     }
   })
-
+  
   var noneItem = new PopupMenu.PopupMenuItem('None');
   (uses_exit) ? noneItem.setOrnament(0) : noneItem.setOrnament(1);
   exitNodeMenu.menu.addMenuItem(noneItem, 0);
@@ -125,12 +126,13 @@ function refreshExitNodesMenu() {
 
 function enableTailscale() {
   // if (run_cmd(["pkexec", "tailscale", "up"])) {
-    // if (run_cmd([ "sleep", "1", "&&", "echo", "hi", "&&", "sleep", "1", "&&", "echo", "hi" ])) {
-  if (run_cmd(["sleep", "5"])) {
-    setUpStatus();
-  } else {
-    setDownStatus();
-  }
+    run(["sleep", "5"]);
+    log("after test sleep command");
+  // if (output != "error") {
+    //   setUpStatus();
+    // } else {
+      //   setDownStatus();
+  // }
 }
 
 const MyPopup = GObject.registerClass(
@@ -221,44 +223,57 @@ const MyPopup = GObject.registerClass(
 
 let timeout;
 
-
 let loop = GLib.MainLoop.new(null, false);
 
-function run_cmd(argv) {
-  try {
-    let proc = Gio.Subprocess.new(
-      argv,
-      Gio.SubprocessFlags.STDOUT_PIPE | Gio.SubprocessFlags.STDERR_PIPE
-    );
-    proc.communicate_utf8_async(null, null, (proc, res) => {
-      try {
-        let [, stdout, stderr] = proc.communicate_utf8_finish(res);
-        if (proc.get_successful()) {
-          output = stdout;
-        } else {
-          output = "error"
-          return false;
+
+function runSubproc(argv) {
+  return new Promise((resolve, reject) => {
+    try {
+      let proc = Gio.Subprocess.new(
+        argv,
+        Gio.SubprocessFlags.STDOUT_PIPE | Gio.SubprocessFlags.STDERR_PIPE
+      );
+      proc.communicate_utf8_async(null, null, (proc, res) => {
+        try {
+          let [, stdout, stderr] = proc.communicate_utf8_finish(res);
+          if (proc.get_successful()) {
+            log("runSubproc-success: " + stdout);
+            parseOutput(stdout);
+            setUpStatus();
+            resolve(stdout);
+          } else {
+            log("runSubproc-error: " + stdout);
+            reject("error");
+          }
+        } catch (e) {
+          logError(e);
+          reject("error");
+        } finally {
+          loop.quit();
         }
-      } catch (e) {
-        logError(e);
-        return false;
-      } finally {
-        loop.quit();
-      }
-    });
-  } catch (e) {
-    logError(e);
-    return false;
-  }
-
-  log("before " + argv);
-  loop.run();
-  log("after " + argv);
-
-  return output != "error";
+      });
+    } catch (e) {
+      logError(e);
+      reject("error");
+    }
+    
+    loop.run();
+  })
 }
 
+async function run(argv) {
+  try {
+    const response = await runSubproc(argv);
+    log("run-response: " + response);
+    return response;
+  } catch (e) {
+      logError(e)
+      return false;
+  }
+}
 
+    
+    
 
 function init () {
 
