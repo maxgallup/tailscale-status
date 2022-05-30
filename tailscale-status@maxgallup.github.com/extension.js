@@ -269,6 +269,9 @@ function enable () {
 }
 
 function disable () {
+    nodesMenu.destroy();
+    exitNodeMenu.destroy();
+    statusItem.destroy();
     tailscale.destroy();
 }
 
