@@ -8,8 +8,10 @@ const PanelMenu = imports.ui.panelMenu;
 const PopupMenu = imports.ui.popupMenu;
 const Me = imports.misc.extensionUtils.getCurrentExtension();
 
-let statusString = "Status: ";
-let disabledString = "❌";
+const statusString = "Status: ";
+const enabledString = "🟢";
+const disabledString = "❌";
+const ownConnectionString = "💻";
 
 class TailscaleNode {
     constructor(_name, _address, _status, _offersExit, _usesExit) {
@@ -24,16 +26,16 @@ class TailscaleNode {
         var statusIcon;
         switch (this.status) {
         case "idle;":
-            statusIcon = "🟢"
+            statusIcon = enabledString;
             break;
         case "active;":
-            statusIcon = "🟢"
+            statusIcon = enabledString;
             break;
         case "offline":
             statusIcon = disabledString;
             break;
         case "-":
-            statusIcon = "💻"
+            statusIcon = ownConnectionString;
             break;
         default:
             statusIcon = "X"
