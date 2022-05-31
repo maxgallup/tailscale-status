@@ -26,9 +26,10 @@ You might have to log in and out for the extension to be loaded.
 This has been tested with [PopOS 22.04](https://pop.system76.com/) and gnome 42 on a Lenovo Ideapad laptop. Feel free to open [pull requests](https://github.com/maxgallup/tailscale-status/pulls) to improve the extension!
 
 ### Todos
-[ ] Test and support various distributions + Wayland support
-[ ] Test and support older gnome-shell versions (< 42)
-[ ] improve code readibility
+
+- [ ] Test and support various distributions + Wayland support
+- [ ] Test and support older gnome-shell versions (< 42)
+- [ ] improve code readibility
 
 
 
