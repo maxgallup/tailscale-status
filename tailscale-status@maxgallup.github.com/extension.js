@@ -252,6 +252,7 @@ const TailscalePopup = GObject.registerClass(
             let downItem = new PopupMenu.PopupMenuItem("Tailscale Down");
             nodesMenu = new PopupMenu.PopupMenuSection();
             exitNodeMenu = new PopupMenu.PopupSubMenuMenuItem("Exit Nodes");
+            let aboutMenu = new PopupMenu.PopupSubMenuMenuItem("About");
 
             
             this.menu.addMenuItem(statusItem, 0);
@@ -277,6 +278,9 @@ const TailscalePopup = GObject.registerClass(
             this.menu.addMenuItem(nodesMenu, 5);
             this.menu.addMenuItem( new PopupMenu.PopupSeparatorMenuItem(), 6);
             this.menu.addMenuItem(exitNodeMenu, 7);
+            this.menu.addMenuItem(aboutMenu, 8);
+            aboutMenu.menu.addMenuItem(new PopupMenu.PopupMenuItem("The Tailscale Status extension is in no way affiliated with Tailscale Inc."));
+            aboutMenu.menu.addMenuItem(new PopupMenu.PopupMenuItem("Open an issue or pull request at github.com/maxgallup/tailscale-status"));
 
             nodes.forEach( (node) => {
                 nodesMenu.actor.add_child( new PopupMenu.PopupMenuItem(node.line) );
