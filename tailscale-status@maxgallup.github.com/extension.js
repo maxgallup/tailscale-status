@@ -298,9 +298,9 @@ function enable () {
 }
 
 function disable () {
-    nodesMenu.destroy();
-    exitNodeMenu.destroy();
-    statusItem.destroy();
-    tailscale.destroy();
+    nodesMenu = null;
+    exitNodeMenu = null;
+    statusItem = null;
+    tailscale = null;
 }
 
