@@ -343,6 +343,10 @@ const TailscalePopup = GObject.registerClass(
                     cmdTailscaleStatus();
                 }
             });
+
+            // TODO
+            // --shields-up, --shields-up=false
+            // --exit-node-allow-lan-access, --exit-node-allow-lan-access=false
             
             this.menu.addMenuItem( new PopupMenu.PopupSeparatorMenuItem());
             this.menu.addMenuItem(nodesMenu);
