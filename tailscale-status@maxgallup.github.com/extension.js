@@ -40,6 +40,7 @@ let nodes = [];
 
 let nodesMenu;
 let exitNodeMenu;
+let sendMenu;
 let statusItem;
 let statusSwitchItem;
 
@@ -146,6 +147,18 @@ function refreshExitNodesMenu() {
     exitNodeMenu.menu.addMenuItem(noneItem, 0);
 }
 
+function refreshSendMenu() {
+    sendMenu.menu.removeAll();
+    nodes.forEach( (node) => {
+        if (node.online && !node.isSelf) {
+            var item = new PopupMenu.PopupMenuItem(node.name)
+            item.connect('activate', () => {
+                log("sending to " + node.name);
+            });
+            sendMenu.menu.addMenuItem(item);
+        }
+    })
+}
 
 function cmdTailscaleStatus() {
     try {
@@ -161,6 +174,7 @@ function cmdTailscaleStatus() {
                     extractNodeInfo(j);
                     setStatus(j);
                     refreshExitNodesMenu();
+                    refreshSendMenu();
                     refreshNodesMenu();
                 }
             } catch (e) {
@@ -241,6 +255,7 @@ const TailscalePopup = GObject.registerClass(
             statusSwitchItem = new PopupMenu.PopupSwitchMenuItem("Tailscale", false);
             nodesMenu = new PopupMenu.PopupMenuSection();
             exitNodeMenu = new PopupMenu.PopupSubMenuMenuItem("Exit Nodes");
+            sendMenu = new PopupMenu.PopupSubMenuMenuItem("Send Files");
             let aboutMenu = new PopupMenu.PopupSubMenuMenuItem("About");
 
             
@@ -275,6 +290,7 @@ const TailscalePopup = GObject.registerClass(
             this.menu.addMenuItem(nodesMenu);
             this.menu.addMenuItem( new PopupMenu.PopupSeparatorMenuItem());
             this.menu.addMenuItem(exitNodeMenu);
+            this.menu.addMenuItem(sendMenu);
             this.menu.addMenuItem(aboutMenu);
             aboutMenu.menu.addMenuItem(new PopupMenu.PopupMenuItem("The Tailscale Status extension is in no way affiliated with Tailscale Inc."));
             aboutMenu.menu.addMenuItem(new PopupMenu.PopupMenuItem("Open an issue or pull request at github.com/maxgallup/tailscale-status"));
