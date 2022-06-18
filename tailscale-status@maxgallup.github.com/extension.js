@@ -41,7 +41,7 @@ let nodes = [];
 let nodesMenu;
 let exitNodeMenu;
 let statusItem;
-
+let statusSwitchItem;
 
 function extractNodeInfo(json) {
     nodes = [];
@@ -89,6 +89,7 @@ function sortNodes(a, b) {
 function setStatus(json) {
     switch (json.BackendState) {
         case "Running":
+            statusSwitchItem.setToggleState(true);
             statusItem.label.text = statusString + "up (no exit-node)";
             nodes.forEach( (node) => {
                 if (node.usesExit) {
@@ -97,6 +98,7 @@ function setStatus(json) {
             })
             break;
         case "Stopped":
+            statusSwitchItem.setToggleState(false);
             statusItem.label.text = statusString + "down";
             nodes = [];
             break;
@@ -191,10 +193,17 @@ function cmdTailscaleUpWithExit(name) {
     }
 }
 
-function cmdTailscaleUp() {
+function cmdTailscaleUp(tag) {
+    let args;
+    if (tag != null) {
+        args = ["pkexec", "tailscale", "up", tag];
+    } else {
+        args = ["pkexec", "tailscale", "up"];
+    }
+
     try {
         let proc = Gio.Subprocess.new(
-            ["pkexec", "tailscale", "up"],
+            args,
             Gio.SubprocessFlags.STDOUT_PIPE | Gio.SubprocessFlags.STDERR_PIPE
         );
         proc.communicate_utf8_async(null, null, (proc, res) => {
@@ -248,28 +257,34 @@ const TailscalePopup = GObject.registerClass(
             this.add_child(icon);
 
             statusItem = new PopupMenu.PopupMenuItem( statusString, {reactive : false} );
-            let upItem = new PopupMenu.PopupMenuItem("Tailscale Up");
-            let acceptRoutesItem = new PopupMenu.PopupSwitchMenuItem("Accept Routes");
-            let downItem = new PopupMenu.PopupMenuItem("Tailscale Down");
+            
+            let acceptRoutesItem = new PopupMenu.PopupSwitchMenuItem("Accept Routes", false);
+            statusSwitchItem = new PopupMenu.PopupSwitchMenuItem("Tailscale", false);
             nodesMenu = new PopupMenu.PopupMenuSection();
             exitNodeMenu = new PopupMenu.PopupSubMenuMenuItem("Exit Nodes");
             let aboutMenu = new PopupMenu.PopupSubMenuMenuItem("About");
 
             
             this.menu.addMenuItem(statusItem, 0);
-            this.menu.addMenuItem( new PopupMenu.PopupSeparatorMenuItem(), 1);
+            this.menu.addMenuItem( new PopupMenu.PopupSeparatorMenuItem());
 
-            this.menu.addMenuItem(upItem, 2);
-            upItem.connect('activate', () => {
-                cmdTailscaleUp();
-            });
+            this.menu.addMenuItem(statusSwitchItem,1);
+            statusSwitchItem.connect('activate', () => {
+                if (statusSwitchItem.state) {
+                    cmdTailscaleUp(); 
+                } else {
+                    cmdTailscaleDown();
+                }
+            })
 
-            this.menu.addMenuItem(acceptRoutesItem, 3);
-            
-            this.menu.addMenuItem(downItem, 4);
-            downItem.connect('activate', () => {
-                cmdTailscaleDown();
-            });
+            this.menu.addMenuItem(acceptRoutesItem, 2);
+            acceptRoutesItem.connect('activate', () => {
+                if (acceptRoutesItem.state) {
+                    cmdTailscaleUp("--accept-routes");
+                } else {
+                    cmdTailscaleUp("--accept-routes=false");
+                }
+            })
             
             this.menu.connect('open-state-changed', (menu, open) => {
                 if (open) {
