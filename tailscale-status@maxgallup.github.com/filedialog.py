@@ -1,3 +1,4 @@
 import tkinter.filedialog as fd
 files = fd.askopenfilenames()
-print(files)
+for f in files:
+    print(f)

@@ -153,12 +153,70 @@ function refreshSendMenu() {
         if (node.online && !node.isSelf) {
             var item = new PopupMenu.PopupMenuItem(node.name)
             item.connect('activate', () => {
-                log("sending to " + node.name);
+                sendFiles(node.address);
             });
             sendMenu.menu.addMenuItem(item);
         }
     })
 }
+
+function sendFiles(dest) {
+    script_path = Me.path + "/filedialog.py"
+    try {
+        let proc = Gio.Subprocess.new(
+            ["python", script_path],
+            Gio.SubprocessFlags.STDOUT_PIPE | Gio.SubprocessFlags.STDERR_PIPE
+        );
+        proc.communicate_utf8_async(null, null, (proc, res) => {
+            try {
+                let [, stdout, stderr] = proc.communicate_utf8_finish(res);
+                if (proc.get_successful()) {
+                    if (stdout != '') {
+                        files = stdout.split("\n")
+                        files.pop()
+                        cmdTailscaleFile(files, dest)
+                    }
+                } else {
+                    logError(script_path + " failed");
+                }
+            } catch (e) {
+                logError(e);
+            }
+        });
+    } catch (e) {
+        logError(e);
+    }
+}
+
+function cmdTailscaleFile(files, dest) { 
+    args = ["pkexec", "tailscale", "file", "cp"]
+    args = args.concat(files)
+    args.push(dest + ":")
+    log(args)
+    try {
+        let proc = Gio.Subprocess.new(
+            args,
+            Gio.SubprocessFlags.STDOUT_PIPE | Gio.SubprocessFlags.STDERR_PIPE
+        );
+        proc.communicate_utf8_async(null, null, (proc, res) => {
+            try {
+                let [, stdout, stderr] = proc.communicate_utf8_finish(res);
+                if (proc.get_successful()) {
+                    log("success")
+                    Main.notify('Tailscale Files sent to ' + dest, 'lol');
+                } else {
+                    log("error")
+                    Main.notify('Unable to send files via Tailscale', 'lol');
+                }
+            } catch (e) {
+                logError(e);
+            }
+        });
+    } catch (e) {
+        logError(e);
+    }
+}
+
 
 function cmdTailscaleStatus() {
     try {
