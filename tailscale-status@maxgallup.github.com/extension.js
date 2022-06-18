@@ -40,8 +40,9 @@ let nodes = [];
 
 let nodesMenu;
 let exitNodeMenu;
+let sendMenu;
 let statusItem;
-
+let statusSwitchItem;
 
 function extractNodeInfo(json) {
     nodes = [];
@@ -89,6 +90,7 @@ function sortNodes(a, b) {
 function setStatus(json) {
     switch (json.BackendState) {
         case "Running":
+            statusSwitchItem.setToggleState(true);
             statusItem.label.text = statusString + "up (no exit-node)";
             nodes.forEach( (node) => {
                 if (node.usesExit) {
@@ -97,6 +99,7 @@ function setStatus(json) {
             })
             break;
         case "Stopped":
+            statusSwitchItem.setToggleState(false);
             statusItem.label.text = statusString + "down";
             nodes = [];
             break;
@@ -123,7 +126,7 @@ function refreshExitNodesMenu() {
         if (node.offersExit) {
         var item = new PopupMenu.PopupMenuItem(node.name)
         item.connect('activate', () => {
-            cmdTailscaleUpWithExit(item.label.text);
+            cmdTailscaleUp("--exit-node=" + item.label.text);
         });
         if (node.usesExit) {
             item.setOrnament(1);
@@ -138,10 +141,80 @@ function refreshExitNodesMenu() {
     
     var noneItem = new PopupMenu.PopupMenuItem('None');
     noneItem.connect('activate', () => {
-        cmdTailscaleUpWithExit("");
+        cmdTailscaleUp("--exit-node=");
     });
     (uses_exit) ? noneItem.setOrnament(0) : noneItem.setOrnament(1);
     exitNodeMenu.menu.addMenuItem(noneItem, 0);
+}
+
+function refreshSendMenu() {
+    sendMenu.menu.removeAll();
+    nodes.forEach( (node) => {
+        if (node.online && !node.isSelf) {
+            var item = new PopupMenu.PopupMenuItem(node.name)
+            item.connect('activate', () => {
+                sendFiles(node.address);
+            });
+            sendMenu.menu.addMenuItem(item);
+        }
+    })
+}
+
+function sendFiles(dest) {
+    script_path = Me.path + "/filedialog.py"
+    try {
+        let proc = Gio.Subprocess.new(
+            ["python", script_path],
+            Gio.SubprocessFlags.STDOUT_PIPE | Gio.SubprocessFlags.STDERR_PIPE
+        );
+        proc.communicate_utf8_async(null, null, (proc, res) => {
+            try {
+                let [, stdout, stderr] = proc.communicate_utf8_finish(res);
+                if (proc.get_successful()) {
+                    if (stdout != '') {
+                        files = stdout.split("\n")
+                        files.pop()
+                        cmdTailscaleFile(files, dest)
+                    }
+                } else {
+                    logError(script_path + " failed");
+                }
+            } catch (e) {
+                logError(e);
+            }
+        });
+    } catch (e) {
+        logError(e);
+    }
+}
+
+function cmdTailscaleFile(files, dest) { 
+    args = ["pkexec", "tailscale", "file", "cp"]
+    args = args.concat(files)
+    args.push(dest + ":")
+    log(args)
+    try {
+        let proc = Gio.Subprocess.new(
+            args,
+            Gio.SubprocessFlags.STDOUT_PIPE | Gio.SubprocessFlags.STDERR_PIPE
+        );
+        proc.communicate_utf8_async(null, null, (proc, res) => {
+            try {
+                let [, stdout, stderr] = proc.communicate_utf8_finish(res);
+                if (proc.get_successful()) {
+                    log("success")
+                    Main.notify('Tailscale Files sent to ' + dest, 'lol');
+                } else {
+                    log("error")
+                    Main.notify('Unable to send files via Tailscale', 'lol');
+                }
+            } catch (e) {
+                logError(e);
+            }
+        });
+    } catch (e) {
+        logError(e);
+    }
 }
 
 
@@ -159,6 +232,7 @@ function cmdTailscaleStatus() {
                     extractNodeInfo(j);
                     setStatus(j);
                     refreshExitNodesMenu();
+                    refreshSendMenu();
                     refreshNodesMenu();
                 }
             } catch (e) {
@@ -170,31 +244,17 @@ function cmdTailscaleStatus() {
     }
 }
 
-function cmdTailscaleUpWithExit(name) {
-    try {
-        let proc = Gio.Subprocess.new(
-            ["pkexec", "tailscale", "up", "--exit-node=" + name],
-            Gio.SubprocessFlags.STDOUT_PIPE | Gio.SubprocessFlags.STDERR_PIPE
-        );
-        proc.communicate_utf8_async(null, null, (proc, res) => {
-            try {
-                let [, stdout, stderr] = proc.communicate_utf8_finish(res);
-                if (!proc.get_successful()) {
-                    log("tailscale up failed")
-                }
-            } catch (e) {
-                logError(e);
-            }
-        });
-    } catch (e) {
-        logError(e);
+function cmdTailscaleUp(tag) {
+    let args;
+    if (tag != null) {
+        args = ["pkexec", "tailscale", "up", tag];
+    } else {
+        args = ["pkexec", "tailscale", "up"];
     }
-}
 
-function cmdTailscaleUp() {
     try {
         let proc = Gio.Subprocess.new(
-            ["pkexec", "tailscale", "up"],
+            args,
             Gio.SubprocessFlags.STDOUT_PIPE | Gio.SubprocessFlags.STDERR_PIPE
         );
         proc.communicate_utf8_async(null, null, (proc, res) => {
@@ -248,25 +308,35 @@ const TailscalePopup = GObject.registerClass(
             this.add_child(icon);
 
             statusItem = new PopupMenu.PopupMenuItem( statusString, {reactive : false} );
-            let upItem = new PopupMenu.PopupMenuItem("Tailscale Up");
-            let downItem = new PopupMenu.PopupMenuItem("Tailscale Down");
+            
+            let acceptRoutesItem = new PopupMenu.PopupSwitchMenuItem("Accept Routes", false);
+            statusSwitchItem = new PopupMenu.PopupSwitchMenuItem("Tailscale", false);
             nodesMenu = new PopupMenu.PopupMenuSection();
             exitNodeMenu = new PopupMenu.PopupSubMenuMenuItem("Exit Nodes");
+            sendMenu = new PopupMenu.PopupSubMenuMenuItem("Send Files");
             let aboutMenu = new PopupMenu.PopupSubMenuMenuItem("About");
 
             
             this.menu.addMenuItem(statusItem, 0);
-            this.menu.addMenuItem( new PopupMenu.PopupSeparatorMenuItem(), 1);
+            this.menu.addMenuItem( new PopupMenu.PopupSeparatorMenuItem());
 
-            this.menu.addMenuItem(upItem, 2);
-            upItem.connect('activate', () => {
-                cmdTailscaleUp();
-            });
-            
-            this.menu.addMenuItem(downItem, 3);
-            downItem.connect('activate', () => {
-                cmdTailscaleDown();
-            });
+            this.menu.addMenuItem(statusSwitchItem,1);
+            statusSwitchItem.connect('activate', () => {
+                if (statusSwitchItem.state) {
+                    cmdTailscaleUp(); 
+                } else {
+                    cmdTailscaleDown();
+                }
+            })
+
+            this.menu.addMenuItem(acceptRoutesItem, 2);
+            acceptRoutesItem.connect('activate', () => {
+                if (acceptRoutesItem.state) {
+                    cmdTailscaleUp("--accept-routes");
+                } else {
+                    cmdTailscaleUp("--accept-routes=false");
+                }
+            })
             
             this.menu.connect('open-state-changed', (menu, open) => {
                 if (open) {
@@ -274,11 +344,12 @@ const TailscalePopup = GObject.registerClass(
                 }
             });
             
-            this.menu.addMenuItem( new PopupMenu.PopupSeparatorMenuItem(), 4);
-            this.menu.addMenuItem(nodesMenu, 5);
-            this.menu.addMenuItem( new PopupMenu.PopupSeparatorMenuItem(), 6);
-            this.menu.addMenuItem(exitNodeMenu, 7);
-            this.menu.addMenuItem(aboutMenu, 8);
+            this.menu.addMenuItem( new PopupMenu.PopupSeparatorMenuItem());
+            this.menu.addMenuItem(nodesMenu);
+            this.menu.addMenuItem( new PopupMenu.PopupSeparatorMenuItem());
+            this.menu.addMenuItem(exitNodeMenu);
+            this.menu.addMenuItem(sendMenu);
+            this.menu.addMenuItem(aboutMenu);
             aboutMenu.menu.addMenuItem(new PopupMenu.PopupMenuItem("The Tailscale Status extension is in no way affiliated with Tailscale Inc."));
             aboutMenu.menu.addMenuItem(new PopupMenu.PopupMenuItem("Open an issue or pull request at github.com/maxgallup/tailscale-status"));
 
@@ -298,9 +369,6 @@ function enable () {
 }
 
 function disable () {
-    nodesMenu = null;
-    exitNodeMenu = null;
-    statusItem = null;
+    tailscale.destroy();
     tailscale = null;
 }
-
