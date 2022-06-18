@@ -27,7 +27,8 @@ This has been tested with [PopOS 22.04](https://pop.system76.com/) and gnome 42 
 
 ### Todos
 
-- [ ] Test and support various distributions + Wayland support
+- [ ] Test and support various distributions
+- [x] Wayland support
 - [ ] Test and support older gnome-shell versions (< 42)
 - [ ] improve code readibility
 
