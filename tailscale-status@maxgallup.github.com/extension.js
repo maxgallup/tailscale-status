@@ -249,6 +249,7 @@ const TailscalePopup = GObject.registerClass(
 
             statusItem = new PopupMenu.PopupMenuItem( statusString, {reactive : false} );
             let upItem = new PopupMenu.PopupMenuItem("Tailscale Up");
+            let acceptRoutesItem = new PopupMenu.PopupSwitchMenuItem("Accept Routes");
             let downItem = new PopupMenu.PopupMenuItem("Tailscale Down");
             nodesMenu = new PopupMenu.PopupMenuSection();
             exitNodeMenu = new PopupMenu.PopupSubMenuMenuItem("Exit Nodes");
@@ -262,8 +263,10 @@ const TailscalePopup = GObject.registerClass(
             upItem.connect('activate', () => {
                 cmdTailscaleUp();
             });
+
+            this.menu.addMenuItem(acceptRoutesItem, 3);
             
-            this.menu.addMenuItem(downItem, 3);
+            this.menu.addMenuItem(downItem, 4);
             downItem.connect('activate', () => {
                 cmdTailscaleDown();
             });
@@ -274,11 +277,11 @@ const TailscalePopup = GObject.registerClass(
                 }
             });
             
-            this.menu.addMenuItem( new PopupMenu.PopupSeparatorMenuItem(), 4);
-            this.menu.addMenuItem(nodesMenu, 5);
-            this.menu.addMenuItem( new PopupMenu.PopupSeparatorMenuItem(), 6);
-            this.menu.addMenuItem(exitNodeMenu, 7);
-            this.menu.addMenuItem(aboutMenu, 8);
+            this.menu.addMenuItem( new PopupMenu.PopupSeparatorMenuItem());
+            this.menu.addMenuItem(nodesMenu);
+            this.menu.addMenuItem( new PopupMenu.PopupSeparatorMenuItem());
+            this.menu.addMenuItem(exitNodeMenu);
+            this.menu.addMenuItem(aboutMenu);
             aboutMenu.menu.addMenuItem(new PopupMenu.PopupMenuItem("The Tailscale Status extension is in no way affiliated with Tailscale Inc."));
             aboutMenu.menu.addMenuItem(new PopupMenu.PopupMenuItem("Open an issue or pull request at github.com/maxgallup/tailscale-status"));
 
@@ -298,9 +301,6 @@ function enable () {
 }
 
 function disable () {
-    nodesMenu = null;
-    exitNodeMenu = null;
-    statusItem = null;
+    tailscale.destroy();
     tailscale = null;
 }
-
