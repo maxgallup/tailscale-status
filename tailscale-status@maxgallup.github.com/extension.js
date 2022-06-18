@@ -125,7 +125,7 @@ function refreshExitNodesMenu() {
         if (node.offersExit) {
         var item = new PopupMenu.PopupMenuItem(node.name)
         item.connect('activate', () => {
-            cmdTailscaleUpWithExit(item.label.text);
+            cmdTailscaleUp("--exit-node=" + item.label.text);
         });
         if (node.usesExit) {
             item.setOrnament(1);
@@ -140,7 +140,7 @@ function refreshExitNodesMenu() {
     
     var noneItem = new PopupMenu.PopupMenuItem('None');
     noneItem.connect('activate', () => {
-        cmdTailscaleUpWithExit("");
+        cmdTailscaleUp("--exit-node=");
     });
     (uses_exit) ? noneItem.setOrnament(0) : noneItem.setOrnament(1);
     exitNodeMenu.menu.addMenuItem(noneItem, 0);
@@ -162,27 +162,6 @@ function cmdTailscaleStatus() {
                     setStatus(j);
                     refreshExitNodesMenu();
                     refreshNodesMenu();
-                }
-            } catch (e) {
-                logError(e);
-            }
-        });
-    } catch (e) {
-        logError(e);
-    }
-}
-
-function cmdTailscaleUpWithExit(name) {
-    try {
-        let proc = Gio.Subprocess.new(
-            ["pkexec", "tailscale", "up", "--exit-node=" + name],
-            Gio.SubprocessFlags.STDOUT_PIPE | Gio.SubprocessFlags.STDERR_PIPE
-        );
-        proc.communicate_utf8_async(null, null, (proc, res) => {
-            try {
-                let [, stdout, stderr] = proc.communicate_utf8_finish(res);
-                if (!proc.get_successful()) {
-                    log("tailscale up failed")
                 }
             } catch (e) {
                 logError(e);
