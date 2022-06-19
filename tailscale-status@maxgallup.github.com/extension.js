@@ -42,6 +42,9 @@ let nodesMenu;
 let exitNodeMenu;
 let sendMenu;
 let statusItem;
+let shieldItem;
+let acceptRoutesItem;
+let allowLanItem;
 let statusSwitchItem;
 let script_path = Me.path + "/filedialog.py";
 let downloads_path = "/home/" + Me.path.split("/")[2] + "/Downloads";
@@ -99,15 +102,23 @@ function setStatus(json) {
                 statusItem.label.text = statusString + "up (exit-node: " + node.name + ")";
                 }
             })
+            setSwitches(true);
             break;
         case "Stopped":
             statusSwitchItem.setToggleState(false);
             statusItem.label.text = statusString + "down";
             nodes = [];
+            setSwitches(false);
             break;
         default:
             log("Error: unknown state");
     }
+}
+
+function setSwitches(b) {
+    shieldItem.actor._activatable = b;
+    acceptRoutesItem.actor._activatable = b;
+    allowLanItem.actor._activatable = b;
 }
 
 function refreshNodesMenu() {
@@ -310,9 +321,9 @@ const TailscalePopup = GObject.registerClass(
             statusItem = new PopupMenu.PopupMenuItem( statusString, {reactive : false} );
             
             statusSwitchItem = new PopupMenu.PopupSwitchMenuItem("Tailscale", false);
-            let shieldItem = new PopupMenu.PopupSwitchMenuItem("Shield", false);
-            let acceptRoutesItem = new PopupMenu.PopupSwitchMenuItem("Accept Routes", false);
-            let allowLanItem = new PopupMenu.PopupSwitchMenuItem("Allow Direct Lan Access", false);
+            shieldItem = new PopupMenu.PopupSwitchMenuItem("Shield", false);
+            acceptRoutesItem = new PopupMenu.PopupSwitchMenuItem("Accept Routes", false);
+            allowLanItem = new PopupMenu.PopupSwitchMenuItem("Allow Direct Lan Access", false);
             nodesMenu = new PopupMenu.PopupMenuSection();
             exitNodeMenu = new PopupMenu.PopupSubMenuMenuItem("Exit Nodes");
             sendMenu = new PopupMenu.PopupSubMenuMenuItem("Send Files");
@@ -325,10 +336,8 @@ const TailscalePopup = GObject.registerClass(
             this.menu.addMenuItem(statusSwitchItem,1);
             statusSwitchItem.connect('activate', () => {
                 if (statusSwitchItem.state) {
-                    // cmdTailscaleUp();
                     cmdTailscale(["up"]);
                 } else {
-                    // cmdTailscaleDown();
                     cmdTailscale(["down"]);
                 }
             })
@@ -336,10 +345,8 @@ const TailscalePopup = GObject.registerClass(
             this.menu.addMenuItem(acceptRoutesItem);
             acceptRoutesItem.connect('activate', () => {
                 if (acceptRoutesItem.state) {
-                    // cmdTailscaleUp("--accept-routes");
                     cmdTailscale(["up", "--accept-routes"]);
                 } else {
-                    // cmdTailscaleUp("--accept-routes=false");
                     cmdTailscale(["up", "--accept-routes=false"]);
                 }
             })
@@ -347,10 +354,8 @@ const TailscalePopup = GObject.registerClass(
             this.menu.addMenuItem(shieldItem);
             shieldItem.connect('activate', () => {
                 if (shieldItem.state) {
-                    // cmdTailscaleUp("--shields-up");
                     cmdTailscale(["up", "--shields-up"]);
                 } else {
-                    // cmdTailscaleUp("--shields-up=false");
                     cmdTailscale(["up", "--shields-up=false"]);
                 }
             })
@@ -358,17 +363,16 @@ const TailscalePopup = GObject.registerClass(
             this.menu.addMenuItem(allowLanItem);
             allowLanItem.connect('activate', () => {
                 if (allowLanItem.state) {
-                    // cmdTailscaleUp("--exit-node-allow-lan-access");
-                    cmdTailscale(["up", "--exit-node-allow-lan-access"]);
+                    if (nodes[0].usesExit) {
+                        cmdTailscale(["up", "--exit-node-allow-lan-access"]);
+                    } else {
+                        Main.notify("Must setup exit node first");
+                        allowLanItem.setToggleState(false);
+                    }
                 } else {
-                    // cmdTailscaleUp("--exit-node-allow-lan-access=false");
                     cmdTailscale(["up", "--exit-node-allow-lan-access=false"]);
                 }
             })
-
-            // allowLanItem.actor._activatable = false;
-            // log(allowLanItem.actor._activatable)
-            // log(shieldItem.actor._activatable)
 
             let receiveFilesItem = new PopupMenu.PopupMenuItem("Accept incoming files");
             receiveFilesItem.connect('activate', () => {
