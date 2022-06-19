@@ -306,9 +306,8 @@ function cmdTailscaleRecFiles() {
 
 const TailscalePopup = GObject.registerClass(
     class TailscalePopup extends PanelMenu.Button {
-    
-        _init () {
 
+        _init () {
             super._init(0);
 
             let icon = new St.Icon({
@@ -318,21 +317,18 @@ const TailscalePopup = GObject.registerClass(
             
             this.add_child(icon);
 
-            statusItem = new PopupMenu.PopupMenuItem( statusString, {reactive : false} );
-            
-            statusSwitchItem = new PopupMenu.PopupSwitchMenuItem("Tailscale", false);
-            shieldItem = new PopupMenu.PopupSwitchMenuItem("Shield", false);
-            acceptRoutesItem = new PopupMenu.PopupSwitchMenuItem("Accept Routes", false);
-            allowLanItem = new PopupMenu.PopupSwitchMenuItem("Allow Direct Lan Access", false);
-            nodesMenu = new PopupMenu.PopupMenuSection();
-            exitNodeMenu = new PopupMenu.PopupSubMenuMenuItem("Exit Nodes");
-            sendMenu = new PopupMenu.PopupSubMenuMenuItem("Send Files");
-            let aboutMenu = new PopupMenu.PopupSubMenuMenuItem("About");
+            this.menu.connect('open-state-changed', (menu, open) => {
+                if (open) {
+                    cmdTailscaleStatus();
+                }
+            });
 
-            
+
+            statusItem = new PopupMenu.PopupMenuItem( statusString, {reactive : false} );
             this.menu.addMenuItem(statusItem, 0);
-            this.menu.addMenuItem( new PopupMenu.PopupSeparatorMenuItem());
-            
+
+
+            statusSwitchItem = new PopupMenu.PopupSwitchMenuItem("Tailscale", false);
             this.menu.addMenuItem(statusSwitchItem,1);
             statusSwitchItem.connect('activate', () => {
                 if (statusSwitchItem.state) {
@@ -342,15 +338,21 @@ const TailscalePopup = GObject.registerClass(
                 }
             })
 
-            this.menu.addMenuItem(acceptRoutesItem);
-            acceptRoutesItem.connect('activate', () => {
-                if (acceptRoutesItem.state) {
-                    cmdTailscale(["up", "--accept-routes"]);
-                } else {
-                    cmdTailscale(["up", "--accept-routes=false"]);
-                }
-            })
+            // ------ SEPARATOR ------
+            this.menu.addMenuItem( new PopupMenu.PopupSeparatorMenuItem());
             
+            // ------ NODES ------
+            nodesMenu = new PopupMenu.PopupMenuSection();
+            nodes.forEach( (node) => {
+                nodesMenu.actor.add_child( new PopupMenu.PopupMenuItem(node.line) );
+            });
+            this.menu.addMenuItem(nodesMenu);
+
+            // ------ SEPARATOR ------
+            this.menu.addMenuItem( new PopupMenu.PopupSeparatorMenuItem());
+
+            // ------ SHIELD ------
+            shieldItem = new PopupMenu.PopupSwitchMenuItem("Shield", false);
             this.menu.addMenuItem(shieldItem);
             shieldItem.connect('activate', () => {
                 if (shieldItem.state) {
@@ -359,7 +361,20 @@ const TailscalePopup = GObject.registerClass(
                     cmdTailscale(["up", "--shields-up=false"]);
                 }
             })
-            
+
+            // ------ ACCEPT ROUTES ------
+            acceptRoutesItem = new PopupMenu.PopupSwitchMenuItem("Accept Routes", false);
+            this.menu.addMenuItem(acceptRoutesItem);
+            acceptRoutesItem.connect('activate', () => {
+                if (acceptRoutesItem.state) {
+                    cmdTailscale(["up", "--accept-routes"]);
+                } else {
+                    cmdTailscale(["up", "--accept-routes=false"]);
+                }
+            })
+
+            // ------ ALLOW DIRECT LAN ACCESS ------
+            allowLanItem = new PopupMenu.PopupSwitchMenuItem("Allow Direct Lan Access", false);
             this.menu.addMenuItem(allowLanItem);
             allowLanItem.connect('activate', () => {
                 if (allowLanItem.state) {
@@ -374,30 +389,30 @@ const TailscalePopup = GObject.registerClass(
                 }
             })
 
+            // ------ SEPARATOR ------
+            this.menu.addMenuItem( new PopupMenu.PopupSeparatorMenuItem());
+
+            // ------ RECEIVE FILES MENU ------
             let receiveFilesItem = new PopupMenu.PopupMenuItem("Accept incoming files");
             receiveFilesItem.connect('activate', () => {
                 cmdTailscaleRecFiles();
             })
-            
-            this.menu.connect('open-state-changed', (menu, open) => {
-                if (open) {
-                    cmdTailscaleStatus();
-                }
-            });
-
-            this.menu.addMenuItem( new PopupMenu.PopupSeparatorMenuItem());
-            this.menu.addMenuItem(nodesMenu);
-            this.menu.addMenuItem( new PopupMenu.PopupSeparatorMenuItem());
-            this.menu.addMenuItem(exitNodeMenu);
-            this.menu.addMenuItem(sendMenu);
             this.menu.addMenuItem(receiveFilesItem);
+
+            // ------ SEND FILES MENU ------
+            sendMenu = new PopupMenu.PopupSubMenuMenuItem("Send Files");
+            this.menu.addMenuItem(sendMenu);
+
+            // ------ EXIT NODES -------
+            exitNodeMenu = new PopupMenu.PopupSubMenuMenuItem("Exit Nodes");
+            this.menu.addMenuItem(exitNodeMenu);
+
+            // ------ ABOUT ------
+            let aboutMenu = new PopupMenu.PopupSubMenuMenuItem("About");
             this.menu.addMenuItem(aboutMenu);
             aboutMenu.menu.addMenuItem(new PopupMenu.PopupMenuItem("The Tailscale Status extension is in no way affiliated with Tailscale Inc."));
             aboutMenu.menu.addMenuItem(new PopupMenu.PopupMenuItem("Open an issue or pull request at github.com/maxgallup/tailscale-status"));
 
-            nodes.forEach( (node) => {
-                nodesMenu.actor.add_child( new PopupMenu.PopupMenuItem(node.line) );
-            });
         }
     }
 );
