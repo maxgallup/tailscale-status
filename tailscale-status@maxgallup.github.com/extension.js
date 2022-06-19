@@ -323,7 +323,6 @@ const TailscalePopup = GObject.registerClass(
                 }
             });
 
-
             statusItem = new PopupMenu.PopupMenuItem( statusString, {reactive : false} );
             this.menu.addMenuItem(statusItem, 0);
 
@@ -352,7 +351,7 @@ const TailscalePopup = GObject.registerClass(
             this.menu.addMenuItem( new PopupMenu.PopupSeparatorMenuItem());
 
             // ------ SHIELD ------
-            shieldItem = new PopupMenu.PopupSwitchMenuItem("Shield", false);
+            shieldItem = new PopupMenu.PopupSwitchMenuItem("Block Incoming", false);
             this.menu.addMenuItem(shieldItem);
             shieldItem.connect('activate', () => {
                 if (shieldItem.state) {
