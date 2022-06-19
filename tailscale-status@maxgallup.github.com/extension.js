@@ -43,6 +43,8 @@ let exitNodeMenu;
 let sendMenu;
 let statusItem;
 let statusSwitchItem;
+let script_path = Me.path + "/filedialog.py";
+let downloads_path = "/home/" + Me.path.split("/")[2] + "/Downloads";
 
 function extractNodeInfo(json) {
     nodes = [];
@@ -161,7 +163,6 @@ function refreshSendMenu() {
 }
 
 function sendFiles(dest) {
-    script_path = Me.path + "/filedialog.py"
     try {
         let proc = Gio.Subprocess.new(
             ["python", script_path],
@@ -203,10 +204,10 @@ function cmdTailscaleFile(files, dest) {
                 let [, stdout, stderr] = proc.communicate_utf8_finish(res);
                 if (proc.get_successful()) {
                     log("success")
-                    Main.notify('Tailscale Files sent to ' + dest, 'lol');
+                    Main.notify('Tailscale Files sent to ' + dest);
                 } else {
                     log("error")
-                    Main.notify('Unable to send files via Tailscale', 'lol');
+                    Main.notify('Unable to send files via Tailscale', 'check logs with journalctl -f -o cat /usr/bin/gnome-shell');
                 }
             } catch (e) {
                 logError(e);
@@ -293,6 +294,31 @@ function cmdTailscaleDown() {
     }
 }
 
+
+function cmdTailscaleRecFiles() {
+    try {
+        let proc = Gio.Subprocess.new(
+            ["pkexec", "tailscale", "file", "get", downloads_path],
+            Gio.SubprocessFlags.STDOUT_PIPE | Gio.SubprocessFlags.STDERR_PIPE
+        );
+        proc.communicate_utf8_async(null, null, (proc, res) => {
+            try {
+                let [, stdout, stderr] = proc.communicate_utf8_finish(res);
+                if (proc.get_successful()) {
+                    Main.notify('Saved files to ' + downloads_path);
+                } else {
+                    Main.notify('Unable to receive files to ' + downloads_path, 'check logs with journalctl -f -o cat /usr/bin/gnome-shell');
+                    log("failed to accept files to ~/Downloads/")
+                }
+            } catch (e) {
+                logError(e);
+            }
+        });
+    } catch (e) {
+        logError(e);
+    }
+}
+
 const TailscalePopup = GObject.registerClass(
     class TailscalePopup extends PanelMenu.Button {
     
@@ -309,8 +335,10 @@ const TailscalePopup = GObject.registerClass(
 
             statusItem = new PopupMenu.PopupMenuItem( statusString, {reactive : false} );
             
-            let acceptRoutesItem = new PopupMenu.PopupSwitchMenuItem("Accept Routes", false);
             statusSwitchItem = new PopupMenu.PopupSwitchMenuItem("Tailscale", false);
+            let shieldItem = new PopupMenu.PopupSwitchMenuItem("Shield", false);
+            let acceptRoutesItem = new PopupMenu.PopupSwitchMenuItem("Accept Routes", false);
+            let allowLanItem = new PopupMenu.PopupSwitchMenuItem("Allow Direct Lan Access", false);
             nodesMenu = new PopupMenu.PopupMenuSection();
             exitNodeMenu = new PopupMenu.PopupSubMenuMenuItem("Exit Nodes");
             sendMenu = new PopupMenu.PopupSubMenuMenuItem("Send Files");
@@ -319,7 +347,7 @@ const TailscalePopup = GObject.registerClass(
             
             this.menu.addMenuItem(statusItem, 0);
             this.menu.addMenuItem( new PopupMenu.PopupSeparatorMenuItem());
-
+            
             this.menu.addMenuItem(statusSwitchItem,1);
             statusSwitchItem.connect('activate', () => {
                 if (statusSwitchItem.state) {
@@ -329,13 +357,36 @@ const TailscalePopup = GObject.registerClass(
                 }
             })
 
-            this.menu.addMenuItem(acceptRoutesItem, 2);
+            this.menu.addMenuItem(acceptRoutesItem);
             acceptRoutesItem.connect('activate', () => {
                 if (acceptRoutesItem.state) {
                     cmdTailscaleUp("--accept-routes");
                 } else {
                     cmdTailscaleUp("--accept-routes=false");
                 }
+            })
+
+            this.menu.addMenuItem(shieldItem);
+            shieldItem.connect('activate', () => {
+                if (shieldItem.state) {
+                    cmdTailscaleUp("--shields-up");
+                } else {
+                    cmdTailscaleUp("--shields-up=false");
+                }
+            })
+            
+            this.menu.addMenuItem(allowLanItem);
+            allowLanItem.connect('activate', () => {
+                if (allowLanItem.state) {
+                    cmdTailscaleUp("--exit-node-allow-lan-access");
+                } else {
+                    cmdTailscaleUp("--exit-node-allow-lan-access=false");
+                }
+            })
+
+            let receiveFilesItem = new PopupMenu.PopupMenuItem("Accept incoming files");
+            receiveFilesItem.connect('activate', () => {
+                cmdTailscaleRecFiles();
             })
             
             this.menu.connect('open-state-changed', (menu, open) => {
@@ -344,15 +395,12 @@ const TailscalePopup = GObject.registerClass(
                 }
             });
 
-            // TODO
-            // --shields-up, --shields-up=false
-            // --exit-node-allow-lan-access, --exit-node-allow-lan-access=false
-            
             this.menu.addMenuItem( new PopupMenu.PopupSeparatorMenuItem());
             this.menu.addMenuItem(nodesMenu);
             this.menu.addMenuItem( new PopupMenu.PopupSeparatorMenuItem());
             this.menu.addMenuItem(exitNodeMenu);
             this.menu.addMenuItem(sendMenu);
+            this.menu.addMenuItem(receiveFilesItem);
             this.menu.addMenuItem(aboutMenu);
             aboutMenu.menu.addMenuItem(new PopupMenu.PopupMenuItem("The Tailscale Status extension is in no way affiliated with Tailscale Inc."));
             aboutMenu.menu.addMenuItem(new PopupMenu.PopupMenuItem("Open an issue or pull request at github.com/maxgallup/tailscale-status"));
