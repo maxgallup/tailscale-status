@@ -46,7 +46,6 @@ let shieldItem;
 let acceptRoutesItem;
 let allowLanItem;
 let statusSwitchItem;
-let script_path = Me.path + "/filedialog.py";
 let downloads_path = "/home/" + Me.path.split("/")[2] + "/Downloads";
 
 function extractNodeInfo(json) {
@@ -178,7 +177,7 @@ function refreshSendMenu() {
 function sendFiles(dest) {
     try {
         let proc = Gio.Subprocess.new(
-            ["python", script_path],
+            ["zenity", "--file-selection", "--multiple"],
             Gio.SubprocessFlags.STDOUT_PIPE | Gio.SubprocessFlags.STDERR_PIPE
         );
         proc.communicate_utf8_async(null, null, (proc, res) => {
@@ -186,12 +185,11 @@ function sendFiles(dest) {
                 let [, stdout, stderr] = proc.communicate_utf8_finish(res);
                 if (proc.get_successful()) {
                     if (stdout != '') {
-                        files = stdout.split("\n")
-                        files.pop()
+                        files = stdout.trim().split("|")
                         cmdTailscaleFile(files, dest)
                     }
                 } else {
-                    logError(script_path + " failed");
+                    logError("zenity failed");
                 }
             } catch (e) {
                 logError(e);
@@ -206,7 +204,6 @@ function cmdTailscaleFile(files, dest) {
     args = ["pkexec", "tailscale", "file", "cp"]
     args = args.concat(files)
     args.push(dest + ":")
-    log(args)
     try {
         let proc = Gio.Subprocess.new(
             args,
@@ -216,10 +213,9 @@ function cmdTailscaleFile(files, dest) {
             try {
                 let [, stdout, stderr] = proc.communicate_utf8_finish(res);
                 if (proc.get_successful()) {
-                    log("success")
                     Main.notify('Tailscale Files sent to ' + dest);
                 } else {
-                    log("error")
+                    log("Unable to send files via Tailscale")
                     Main.notify('Unable to send files via Tailscale', 'check logs with journalctl -f -o cat /usr/bin/gnome-shell');
                 }
             } catch (e) {
