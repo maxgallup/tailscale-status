@@ -128,7 +128,8 @@ function refreshExitNodesMenu() {
         if (node.offersExit) {
         var item = new PopupMenu.PopupMenuItem(node.name)
         item.connect('activate', () => {
-            cmdTailscaleUp("--exit-node=" + item.label.text);
+            // cmdTailscaleUp("--exit-node=" + item.label.text);
+            cmdTailscale(["up", "--exit-node="+item.label.text])
         });
         if (node.usesExit) {
             item.setOrnament(1);
@@ -143,7 +144,8 @@ function refreshExitNodesMenu() {
     
     var noneItem = new PopupMenu.PopupMenuItem('None');
     noneItem.connect('activate', () => {
-        cmdTailscaleUp("--exit-node=");
+        // cmdTailscaleUp("--exit-node=");
+        cmdTailscale("up", "--exit-node=")
     });
     (uses_exit) ? noneItem.setOrnament(0) : noneItem.setOrnament(1);
     exitNodeMenu.menu.addMenuItem(noneItem, 0);
@@ -245,45 +247,17 @@ function cmdTailscaleStatus() {
     }
 }
 
-function cmdTailscaleUp(tag) {
-    let args;
-    if (tag != null) {
-        args = ["pkexec", "tailscale", "up", tag];
-    } else {
-        args = ["pkexec", "tailscale", "up"];
-    }
-
+function cmdTailscale(args) {
     try {
         let proc = Gio.Subprocess.new(
-            args,
+            ["pkexec", "tailscale"].concat(args),
             Gio.SubprocessFlags.STDOUT_PIPE | Gio.SubprocessFlags.STDERR_PIPE
         );
         proc.communicate_utf8_async(null, null, (proc, res) => {
             try {
                 let [, stdout, stderr] = proc.communicate_utf8_finish(res);
                 if (!proc.get_successful()) {
-                    log("tailscale up failed")
-                }
-            } catch (e) {
-                logError(e);
-            }
-        });
-    } catch (e) {
-        logError(e);
-    }
-}
-
-function cmdTailscaleDown() {
-    try {
-        let proc = Gio.Subprocess.new(
-            ["pkexec", "tailscale", "down"],
-            Gio.SubprocessFlags.STDOUT_PIPE | Gio.SubprocessFlags.STDERR_PIPE
-        );
-        proc.communicate_utf8_async(null, null, (proc, res) => {
-            try {
-                let [, stdout, stderr] = proc.communicate_utf8_finish(res);
-                if (!proc.get_successful()) {
-                    log("tailscale down failed")
+                    log("tailscale " + args[1] + " failed");
                 }
             } catch (e) {
                 logError(e);
@@ -351,38 +325,50 @@ const TailscalePopup = GObject.registerClass(
             this.menu.addMenuItem(statusSwitchItem,1);
             statusSwitchItem.connect('activate', () => {
                 if (statusSwitchItem.state) {
-                    cmdTailscaleUp(); 
+                    // cmdTailscaleUp();
+                    cmdTailscale(["up"]);
                 } else {
-                    cmdTailscaleDown();
+                    // cmdTailscaleDown();
+                    cmdTailscale(["down"]);
                 }
             })
 
             this.menu.addMenuItem(acceptRoutesItem);
             acceptRoutesItem.connect('activate', () => {
                 if (acceptRoutesItem.state) {
-                    cmdTailscaleUp("--accept-routes");
+                    // cmdTailscaleUp("--accept-routes");
+                    cmdTailscale(["up", "--accept-routes"]);
                 } else {
-                    cmdTailscaleUp("--accept-routes=false");
+                    // cmdTailscaleUp("--accept-routes=false");
+                    cmdTailscale(["up", "--accept-routes=false"]);
                 }
             })
-
+            
             this.menu.addMenuItem(shieldItem);
             shieldItem.connect('activate', () => {
                 if (shieldItem.state) {
-                    cmdTailscaleUp("--shields-up");
+                    // cmdTailscaleUp("--shields-up");
+                    cmdTailscale(["up", "--shields-up"]);
                 } else {
-                    cmdTailscaleUp("--shields-up=false");
+                    // cmdTailscaleUp("--shields-up=false");
+                    cmdTailscale(["up", "--shields-up=false"]);
                 }
             })
             
             this.menu.addMenuItem(allowLanItem);
             allowLanItem.connect('activate', () => {
                 if (allowLanItem.state) {
-                    cmdTailscaleUp("--exit-node-allow-lan-access");
+                    // cmdTailscaleUp("--exit-node-allow-lan-access");
+                    cmdTailscale(["up", "--exit-node-allow-lan-access"]);
                 } else {
-                    cmdTailscaleUp("--exit-node-allow-lan-access=false");
+                    // cmdTailscaleUp("--exit-node-allow-lan-access=false");
+                    cmdTailscale(["up", "--exit-node-allow-lan-access=false"]);
                 }
             })
+
+            // allowLanItem.actor._activatable = false;
+            // log(allowLanItem.actor._activatable)
+            // log(shieldItem.actor._activatable)
 
             let receiveFilesItem = new PopupMenu.PopupMenuItem("Accept incoming files");
             receiveFilesItem.connect('activate', () => {
