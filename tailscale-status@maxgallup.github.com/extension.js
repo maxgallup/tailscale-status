@@ -46,7 +46,8 @@ let shieldItem;
 let acceptRoutesItem;
 let allowLanItem;
 let statusSwitchItem;
-let downloads_path = "/home/" + Me.path.split("/")[2] + "/Downloads";
+let downloads_path = GLib.get_user_special_dir(GLib.UserDirectory.DIRECTORY_DOWNLOAD);
+
 
 function extractNodeInfo(json) {
     nodes = [];
@@ -289,7 +290,7 @@ function cmdTailscaleRecFiles() {
                     Main.notify('Saved files to ' + downloads_path);
                 } else {
                     Main.notify('Unable to receive files to ' + downloads_path, 'check logs with journalctl -f -o cat /usr/bin/gnome-shell');
-                    log("failed to accept files to ~/Downloads/")
+                    log("failed to accept files to "+downloads_path)
                 }
             } catch (e) {
                 logError(e);
