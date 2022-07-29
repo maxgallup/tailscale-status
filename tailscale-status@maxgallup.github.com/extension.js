@@ -289,7 +289,7 @@ function cmdTailscaleRecFiles() {
                     Main.notify('Saved files to ' + downloads_path);
                 } else {
                     Main.notify('Unable to receive files to ' + downloads_path, 'check logs with journalctl -f -o cat /usr/bin/gnome-shell');
-                    log("failed to accept files to "+downloads_path)
+                    log("failed to accept files to " + downloads_path)
                 }
             } catch (e) {
                 logError(e);
