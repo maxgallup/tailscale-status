@@ -48,7 +48,6 @@ let allowLanItem;
 let statusSwitchItem;
 let downloads_path = GLib.get_user_special_dir(GLib.UserDirectory.DIRECTORY_DOWNLOAD);
 
-
 function extractNodeInfo(json) {
     nodes = [];
 
