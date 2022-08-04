@@ -138,7 +138,6 @@ function refreshExitNodesMenu() {
         if (node.offersExit) {
         var item = new PopupMenu.PopupMenuItem(node.name)
         item.connect('activate', () => {
-            // cmdTailscaleUp("--exit-node=" + item.label.text);
             cmdTailscale(["up", "--exit-node="+item.label.text])
         });
         if (node.usesExit) {
@@ -154,8 +153,7 @@ function refreshExitNodesMenu() {
     
     var noneItem = new PopupMenu.PopupMenuItem('None');
     noneItem.connect('activate', () => {
-        // cmdTailscaleUp("--exit-node=");
-        cmdTailscale("up", "--exit-node=")
+        cmdTailscale(["up", "--exit-node=", "--reset"]);
     });
     (uses_exit) ? noneItem.setOrnament(0) : noneItem.setOrnament(1);
     exitNodeMenu.menu.addMenuItem(noneItem, 0);
@@ -211,7 +209,7 @@ function cmdTailscaleFile(files, dest) {
         );
         proc.communicate_utf8_async(null, null, (proc, res) => {
             try {
-                let [, stdout, stderr] = proc.communicate_utf8_finish(res);
+                proc.communicate_utf8_finish(res);
                 if (proc.get_successful()) {
                     Main.notify('Tailscale Files sent to ' + dest);
                 } else {
@@ -262,7 +260,7 @@ function cmdTailscale(args) {
         );
         proc.communicate_utf8_async(null, null, (proc, res) => {
             try {
-                let [, stdout, stderr] = proc.communicate_utf8_finish(res);
+                proc.communicate_utf8_finish(res);
                 if (!proc.get_successful()) {
                     log("tailscale " + args[1] + " failed");
                 }
@@ -284,7 +282,7 @@ function cmdTailscaleRecFiles() {
         );
         proc.communicate_utf8_async(null, null, (proc, res) => {
             try {
-                let [, stdout, stderr] = proc.communicate_utf8_finish(res);
+                proc.communicate_utf8_finish(res);
                 if (proc.get_successful()) {
                     Main.notify('Saved files to ' + downloads_path);
                 } else {
