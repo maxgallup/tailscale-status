@@ -138,7 +138,7 @@ function refreshExitNodesMenu() {
         if (node.offersExit) {
         var item = new PopupMenu.PopupMenuItem(node.name)
         item.connect('activate', () => {
-            cmdTailscale(["up", "--exit-node="+item.label.text])
+            cmdTailscale(["up", "--exit-node="+item.label.text, "--reset"])
         });
         if (node.usesExit) {
             item.setOrnament(1);
@@ -351,7 +351,7 @@ const TailscalePopup = GObject.registerClass(
                 if (shieldItem.state) {
                     cmdTailscale(["up", "--shields-up"]);
                 } else {
-                    cmdTailscale(["up", "--shields-up=false"]);
+                    cmdTailscale(["up", "--shields-up=false", "--reset"]);
                 }
             })
 
@@ -362,7 +362,7 @@ const TailscalePopup = GObject.registerClass(
                 if (acceptRoutesItem.state) {
                     cmdTailscale(["up", "--accept-routes"]);
                 } else {
-                    cmdTailscale(["up", "--accept-routes=false"]);
+                    cmdTailscale(["up", "--accept-routes=false", "--reset"]);
                 }
             })
 
@@ -378,7 +378,7 @@ const TailscalePopup = GObject.registerClass(
                         allowLanItem.setToggleState(false);
                     }
                 } else {
-                    cmdTailscale(["up", "--exit-node-allow-lan-access=false"]);
+                    cmdTailscale(["up", "--exit-node-allow-lan-access=false", "--reset"]);
                 }
             })
 
