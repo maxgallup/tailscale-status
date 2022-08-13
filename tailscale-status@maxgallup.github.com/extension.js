@@ -38,6 +38,7 @@ class TailscaleNode {
 
 let nodes = [];
 
+let icon;
 let nodesMenu;
 let exitNodeMenu;
 let sendMenu;
@@ -94,16 +95,19 @@ function sortNodes(a, b) {
 function setStatus(json) {
     switch (json.BackendState) {
         case "Running":
+            icon.gicon = Gio.icon_new_for_string( Me.dir.get_path() + '/icon-up.svg' );
             statusSwitchItem.setToggleState(true);
             statusItem.label.text = statusString + "up (no exit-node)";
             nodes.forEach( (node) => {
                 if (node.usesExit) {
-                statusItem.label.text = statusString + "up (exit-node: " + node.name + ")";
+                    statusItem.label.text = statusString + "up (exit-node: " + node.name + ")";
+                    icon.gicon = Gio.icon_new_for_string( Me.dir.get_path() + '/icon-exit-node.svg' );
                 }
             })
             setSwitches(true);
             break;
         case "Stopped":
+            icon.gicon = Gio.icon_new_for_string( Me.dir.get_path() + '/icon-down.svg' );
             statusSwitchItem.setToggleState(false);
             statusItem.label.text = statusString + "down";
             nodes = [];
@@ -263,6 +267,8 @@ function cmdTailscale(args) {
                 proc.communicate_utf8_finish(res);
                 if (!proc.get_successful()) {
                     log("tailscale " + args[1] + " failed");
+                } else {
+                    cmdTailscaleStatus()
                 }
             } catch (e) {
                 logError(e);
@@ -304,8 +310,8 @@ const TailscalePopup = GObject.registerClass(
         _init () {
             super._init(0);
 
-            let icon = new St.Icon({
-                gicon : Gio.icon_new_for_string( Me.dir.get_path() + '/icon.svg' ),
+            icon = new St.Icon({
+                gicon : Gio.icon_new_for_string( Me.dir.get_path() + '/icon-down.svg' ),
                 style_class : 'system-status-icon',
             });
             
