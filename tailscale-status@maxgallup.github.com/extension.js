@@ -49,6 +49,11 @@ let allowLanItem;
 let statusSwitchItem;
 let downloads_path = GLib.get_user_special_dir(GLib.UserDirectory.DIRECTORY_DOWNLOAD);
 
+let icon_down = Gio.icon_new_for_string( Me.dir.get_path() + '/icon-down.svg' );
+let icon_up = Gio.icon_new_for_string( Me.dir.get_path() + '/icon-up.svg' );
+let icon_exit_node = Gio.icon_new_for_string( Me.dir.get_path() + '/icon-exit-node.svg' );
+
+
 function extractNodeInfo(json) {
     nodes = [];
 
@@ -95,19 +100,19 @@ function sortNodes(a, b) {
 function setStatus(json) {
     switch (json.BackendState) {
         case "Running":
-            icon.gicon = Gio.icon_new_for_string( Me.dir.get_path() + '/icon-up.svg' );
+            icon.gicon = icon_up;
             statusSwitchItem.setToggleState(true);
             statusItem.label.text = statusString + "up (no exit-node)";
             nodes.forEach( (node) => {
                 if (node.usesExit) {
                     statusItem.label.text = statusString + "up (exit-node: " + node.name + ")";
-                    icon.gicon = Gio.icon_new_for_string( Me.dir.get_path() + '/icon-exit-node.svg' );
+                    icon.gicon = icon_exit_node;
                 }
             })
             setSwitches(true);
             break;
         case "Stopped":
-            icon.gicon = Gio.icon_new_for_string( Me.dir.get_path() + '/icon-down.svg' );
+            icon.gicon = icon_down;
             statusSwitchItem.setToggleState(false);
             statusItem.label.text = statusString + "down";
             nodes = [];
@@ -311,7 +316,7 @@ const TailscalePopup = GObject.registerClass(
             super._init(0);
 
             icon = new St.Icon({
-                gicon : Gio.icon_new_for_string( Me.dir.get_path() + '/icon-down.svg' ),
+                gicon : icon_down,
                 style_class : 'system-status-icon',
             });
             
@@ -427,4 +432,5 @@ function enable () {
 function disable () {
     tailscale.destroy();
     tailscale = null;
+    icon = null;
 }
