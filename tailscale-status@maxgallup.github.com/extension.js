@@ -38,7 +38,6 @@ class TailscaleNode {
 
 let nodes = [];
 
-let icon;
 let nodesMenu;
 let exitNodeMenu;
 let sendMenu;
@@ -48,10 +47,10 @@ let acceptRoutesItem;
 let allowLanItem;
 let statusSwitchItem;
 let downloads_path = GLib.get_user_special_dir(GLib.UserDirectory.DIRECTORY_DOWNLOAD);
-
-let icon_down = Gio.icon_new_for_string( Me.dir.get_path() + '/icon-down.svg' );
-let icon_up = Gio.icon_new_for_string( Me.dir.get_path() + '/icon-up.svg' );
-let icon_exit_node = Gio.icon_new_for_string( Me.dir.get_path() + '/icon-exit-node.svg' );
+let icon;
+let icon_down;
+let icon_up;
+let icon_exit_node;
 
 
 function extractNodeInfo(json) {
@@ -315,6 +314,11 @@ const TailscalePopup = GObject.registerClass(
         _init () {
             super._init(0);
 
+            
+            icon_down = Gio.icon_new_for_string( Me.dir.get_path() + '/icon-down.svg' );
+            icon_up = Gio.icon_new_for_string( Me.dir.get_path() + '/icon-up.svg' );
+            icon_exit_node = Gio.icon_new_for_string( Me.dir.get_path() + '/icon-exit-node.svg' );
+            
             icon = new St.Icon({
                 gicon : icon_down,
                 style_class : 'system-status-icon',
@@ -433,4 +437,7 @@ function disable () {
     tailscale.destroy();
     tailscale = null;
     icon = null;
+    icon_down = null;
+    icon_up = null;
+    icon_exit_node = null;
 }

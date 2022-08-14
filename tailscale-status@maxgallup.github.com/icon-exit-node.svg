@@ -6,7 +6,7 @@
    fill="none"
    version="1.1"
    id="svg22"
-   sodipodi:docname="icon-up (copy).svg"
+   sodipodi:docname="icon-exit-node.svg"
    inkscape:version="1.2.1 (9c6d41e410, 2022-07-14)"
    xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape"
    xmlns:sodipodi="http://sodipodi.sourceforge.net/DTD/sodipodi-0.dtd"
@@ -34,8 +34,8 @@
      inkscape:deskcolor="#d1d1d1"
      showgrid="false"
      inkscape:zoom="5.475044"
-     inkscape:cx="-15.707636"
-     inkscape:cy="29.954097"
+     inkscape:cx="18.17337"
+     inkscape:cy="21.734985"
      inkscape:window-width="1680"
      inkscape:window-height="1019"
      inkscape:window-x="12"
@@ -48,7 +48,7 @@
      rx="14"
      fill="#232325"
      id="rect2-3"
-     style="display:inline;fill:#4dff50;fill-opacity:1;stroke:none;stroke-width:4.6;stroke-linecap:square;stroke-dasharray:none;stroke-opacity:1;paint-order:markers stroke fill"
+     style="display:inline;fill:#01bd04;fill-opacity:0.65340316;stroke:none;stroke-width:4.6;stroke-linecap:square;stroke-dasharray:none;stroke-opacity:1;paint-order:markers stroke fill"
      x="0"
      y="0" />
   <rect
