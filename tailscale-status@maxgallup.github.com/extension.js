@@ -58,7 +58,7 @@ function extractNodeInfo(json) {
 
     var me = json.Self;
     nodes.push(new TailscaleNode(
-        me.HostName,
+        me.DNSName.split(".")[0],
         me.TailscaleIPs[0],
         me.Online,
         me.ExitNodeOption,
@@ -69,7 +69,7 @@ function extractNodeInfo(json) {
     for (let p in json.Peer) {
         var n = json.Peer[p];
         nodes.push(new TailscaleNode(
-            n.HostName,
+            n.DNSName.split(".")[0],
             n.TailscaleIPs[0],
             n.Online,
             n.ExitNodeOption,
