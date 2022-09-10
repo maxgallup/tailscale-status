@@ -262,6 +262,17 @@ function cmdTailscaleStatus() {
 }
 
 function cmdTailscale(args) {
+    // if (args[0] = "up") {
+    //     args = args.concat(["--operator=$USER"]);
+    //     log(">>>>", args);
+    // }
+
+    // let command = ["pkexec", "tailscale"].concat(args);
+    // let password_less_command = ["tailscale"].concat(args).concat(["||"]);
+
+    // let final_command = password_less_command.concat(command);
+    // log(">>>>--", final_command);
+
     try {
         let proc = Gio.Subprocess.new(
             ["pkexec", "tailscale"].concat(args),
