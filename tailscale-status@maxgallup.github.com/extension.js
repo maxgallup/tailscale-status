@@ -134,6 +134,7 @@ function refreshNodesMenu() {
         let item = new PopupMenu.PopupMenuItem(node.line)
         item.connect('activate', () => {
             St.Clipboard.get_default().set_text(St.ClipboardType.CLIPBOARD, node.address);
+            Main.notify("Copied " + node.address + " to clipboard! (" + node.name + ")");
         });
         nodesMenu.actor.add_child( item );
     });
