@@ -53,6 +53,8 @@ let icon_up;
 let icon_exit_node;
 
 
+let timerId = null;
+
 function extractNodeInfo(json) {
     nodes = [];
 
@@ -238,8 +240,8 @@ function cmdTailscaleFile(files, dest) {
 function cmdTailscaleStatus() {
     try {
         let proc = Gio.Subprocess.new(
-            ["tailscale", "status", "--json"],
-            Gio.SubprocessFlags.STDOUT_PIPE | Gio.SubprocessFlags.STDERR_PIPE
+          ["curl", "--silent", "--unix-socket", "/run/tailscale/tailscaled.sock", "http://localhost/localapi/v0/status" ],
+      Gio.SubprocessFlags.STDOUT_PIPE | Gio.SubprocessFlags.STDERR_PIPE
         );
         proc.communicate_utf8_async(null, null, (proc, res) => {
             try {
@@ -441,6 +443,13 @@ function init () {
 }
 
 function enable () {
+
+    // Timer that updates Status icon and drop down menu
+    timerId = GLib.timeout_add_seconds(GLib.PRIORITY_DEFAULT, 10, () => {
+        cmdTailscaleStatus();
+        return GLib.SOURCE_CONTINUE;
+    });
+
     tailscale = new TailscalePopup();
     Main.panel.addToStatusArea('tailscale', tailscale, 1);
 }
@@ -452,4 +461,11 @@ function disable () {
     icon_down = null;
     icon_up = null;
     icon_exit_node = null;
+
+    if (timerId) {
+        GLib.Source.remove(timerId);
+        timerId = null;
+    }
+
+
 }
