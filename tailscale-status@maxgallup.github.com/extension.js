@@ -240,7 +240,8 @@ function cmdTailscaleFile(files, dest) {
 function cmdTailscaleStatus() {
     try {
         let proc = Gio.Subprocess.new(
-          ["curl", "--silent", "--unix-socket", "/run/tailscale/tailscaled.sock", "http://localhost/localapi/v0/status" ],
+          // ["curl", "--silent", "--unix-socket", "/run/tailscale/tailscaled.sock", "http://localhost/localapi/v0/status" ],
+          ["tailscale", "status", "--json"]
       Gio.SubprocessFlags.STDOUT_PIPE | Gio.SubprocessFlags.STDERR_PIPE
         );
         proc.communicate_utf8_async(null, null, (proc, res) => {
@@ -264,16 +265,12 @@ function cmdTailscaleStatus() {
 }
 
 function cmdTailscale(args) {
-    // if (args[0] = "up") {
+
+    // if (args[0] == "up") {
     //     args = args.concat(["--operator=$USER"]);
-    //     log(">>>>", args);
     // }
 
-    // let command = ["pkexec", "tailscale"].concat(args);
-    // let password_less_command = ["tailscale"].concat(args).concat(["||"]);
-
-    // let final_command = password_less_command.concat(command);
-    // log(">>>>--", final_command);
+    // let command = ["tailscale"].concat(args).concat(["||", "pkexec", "tailscale"].concat(args));
 
     try {
         let proc = Gio.Subprocess.new(
@@ -284,7 +281,8 @@ function cmdTailscale(args) {
             try {
                 proc.communicate_utf8_finish(res);
                 if (!proc.get_successful()) {
-                    log("tailscale " + args[1] + " failed");
+                    log(args);
+                    log("failed @ cmdTailscale");
                 } else {
                     cmdTailscaleStatus()
                 }
@@ -297,8 +295,6 @@ function cmdTailscale(args) {
     }
 }
 
-
-function cmdTailscaleRecFiles() {
     try {
         let proc = Gio.Subprocess.new(
             ["pkexec", "tailscale", "file", "get", downloads_path],

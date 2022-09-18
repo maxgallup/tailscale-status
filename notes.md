@@ -34,3 +34,7 @@ echo $BACKENDSTATE
 
 
 ```
+
+
+# password-less command
+`tailscale up --operator=$USER || pkexec tailscale up --operator=$USER`
