@@ -21,3 +21,16 @@
 * "/localapi/v0/set-expiry-sooner"  
 * "/localapi/v0/dial"  
 * "/localapi/v0/id-token"  
+
+# commands
+``` bash
+#!/bin/bash
+
+DATA=$(curl --silent --unix-socket /run/tailscale/tailscaled.sock http://localhost/localapi/v0/status)
+
+BACKENDSTATE=$(echo "$DATA" | jq -r .BackendState)
+
+echo $BACKENDSTATE
+
+
+```
