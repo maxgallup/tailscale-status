@@ -293,7 +293,9 @@ function cmdTailscale(args) {
     } catch (e) {
         logError(e);
     }
+}
 
+function cmdTailscaleRecFiles() {
     try {
         let proc = Gio.Subprocess.new(
             ["pkexec", "tailscale", "file", "get", downloads_path],
