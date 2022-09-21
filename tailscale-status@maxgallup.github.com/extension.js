@@ -241,8 +241,8 @@ function cmdTailscaleStatus() {
     try {
         let proc = Gio.Subprocess.new(
           // ["curl", "--silent", "--unix-socket", "/run/tailscale/tailscaled.sock", "http://localhost/localapi/v0/status" ],
-          ["tailscale", "status", "--json"]
-      Gio.SubprocessFlags.STDOUT_PIPE | Gio.SubprocessFlags.STDERR_PIPE
+          ["tailscale", "status", "--json"],
+          Gio.SubprocessFlags.STDOUT_PIPE | Gio.SubprocessFlags.STDERR_PIPE
         );
         proc.communicate_utf8_async(null, null, (proc, res) => {
             try {
@@ -295,6 +295,7 @@ function cmdTailscale(args) {
     }
 }
 
+function cmdTailscaleRecFiles() {
     try {
         let proc = Gio.Subprocess.new(
             ["pkexec", "tailscale", "file", "get", downloads_path],
