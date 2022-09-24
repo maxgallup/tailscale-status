@@ -10,7 +10,7 @@ Thus, this requires that you have **setup tailscale beforehand**.
 * Copy address of any node by clicking it in the menu
     * 💻 - your own computer
     * 🟢 - online or idle
-    * ❌ - offline
+    * ⚫ - offline
 * enable/disable incoming connections
 * accept/reject subnet routes
 * *if exit node:* allow direct access to local network
