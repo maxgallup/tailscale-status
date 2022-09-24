@@ -4,7 +4,7 @@
 Easily view the status of your tailscale mesh network and toggle the status of your own machine.
 Thus, this requires that you have **setup tailscale beforehand**. 
 
-![menu image](pics/screensho.png)
+![menu image](pics/screenshot.png)
 
 ### Features
 * Copy address of any node by clicking it in the menu
