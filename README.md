@@ -10,7 +10,7 @@ Thus, this requires that you have **setup tailscale beforehand**.
 * Copy address of any node by clicking it in the menu
     * 💻 - your own computer
     * 🟢 - online or idle
-    * ❌ - offline
+    * ⚫ - offline
 * enable/disable incoming connections
 * accept/reject subnet routes
 * *if exit node:* allow direct access to local network
@@ -30,7 +30,5 @@ This has been tested with [PopOS 22.04](https://pop.system76.com/) and gnome 42 
 
 ### TODOs
 - [ ] Test and support older gnome-shell versions (< 42)
-- [ ] improve code readibility
-
 
 

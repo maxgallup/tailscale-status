@@ -10,7 +10,7 @@ const Me = imports.misc.extensionUtils.getCurrentExtension();
 
 const statusString = "Status: ";
 const enabledString = "🟢";
-const disabledString = "❌";
+const disabledString = "⚫";
 const ownConnectionString = "💻";
 
 class TailscaleNode {
