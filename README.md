@@ -18,7 +18,7 @@ Thus, this requires that you have **setup tailscale beforehand**.
 * Connect through an available [exit node](https://tailscale.com/kb/1103/exit-nodes/)
 
 ### Dependencies
-This obviously **requires** [tailscale](https://tailscale.com) to work! To send files `python3` is required as well.
+This obviously **requires** [tailscale](https://tailscale.com) to work! 
 
 ### Installation
 Download the `tailscale-status@maxgallup.github.com` directory and move it to `~/.local/share/gnome-shell/extensions/`.
@@ -30,5 +30,5 @@ This has been tested with [PopOS 22.04](https://pop.system76.com/) and gnome 42 
 
 ### TODOs
 - [ ] Test and support older gnome-shell versions (< 42)
-
+- [ ] find solution to Issue #12, #9
 
