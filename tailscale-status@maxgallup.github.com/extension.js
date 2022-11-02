@@ -131,14 +131,14 @@ function setSwitches(b) {
 }
 
 function refreshNodesMenu() {
-    nodesMenu.removeAll();
+    nodesMenu.menu.removeAll();
     nodes.forEach( (node) => {
         let item = new PopupMenu.PopupMenuItem(node.line)
         item.connect('activate', () => {
             St.Clipboard.get_default().set_text(St.ClipboardType.CLIPBOARD, node.address);
             Main.notify("Copied " + node.address + " to clipboard! (" + node.name + ")");
         });
-        nodesMenu.actor.add_child( item );
+        nodesMenu.menu.addMenuItem(item);
     });
 }
 
@@ -359,11 +359,11 @@ const TailscalePopup = GObject.registerClass(
 
             // ------ SEPARATOR ------
             this.menu.addMenuItem( new PopupMenu.PopupSeparatorMenuItem());
-            
+
             // ------ NODES ------
-            nodesMenu = new PopupMenu.PopupMenuSection();
+            nodesMenu = new PopupMenu.PopupSubMenuMenuItem("Nodes");
             nodes.forEach( (node) => {
-                nodesMenu.actor.add_child( new PopupMenu.PopupMenuItem(node.line) );
+                nodesMenu.menu.addMenuItem( new PopupMenu.PopupMenuItem(node.line) );
             });
             this.menu.addMenuItem(nodesMenu);
 
