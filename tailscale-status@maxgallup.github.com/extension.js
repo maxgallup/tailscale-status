@@ -512,7 +512,7 @@ const TailscalePopup = GObject.registerClass(
                 }
             })
 
-
+            aboutMenu.menu.addMenuItem(healthMenu);
 
             //  aboutMenu.menu.addMenuItem(new PopupMenu.PopupMenuItem("The Tailscale Status extension is in no way affiliated with Tailscale Inc."));
             //  aboutMenu.menu.addMenuItem(new PopupMenu.PopupMenuItem("Open an issue or pull request at github.com/maxgallup/tailscale-status"));
