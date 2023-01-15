@@ -264,25 +264,23 @@ function cmdTailscaleStatus() {
     }
 }
 
-function cmdTailscale(args) {
-
-    // if (args[0] == "up") {
-    //     args = args.concat(["--operator=$USER"]);
-    // }
-
-    // let command = ["tailscale"].concat(args).concat(["||", "pkexec", "tailscale"].concat(args));
+function cmdTailscale(args, unprivileged = true) {
+    let command = (unprivileged ? ["tailscale"] : ["pkexec", "tailscale"]).concat(args);
 
     try {
         let proc = Gio.Subprocess.new(
-            ["pkexec", "tailscale"].concat(args),
+            command,
             Gio.SubprocessFlags.STDOUT_PIPE | Gio.SubprocessFlags.STDERR_PIPE
         );
         proc.communicate_utf8_async(null, null, (proc, res) => {
             try {
                 proc.communicate_utf8_finish(res);
                 if (!proc.get_successful()) {
-                    log(args);
-                    log("failed @ cmdTailscale");
+                    if (unprivileged) {
+                        cmdTailscale(args[0] == "up" ? args.concat(["--operator=" + GLib.get_user_name(), "--reset"]) : args, false)
+                    } else {
+                        log("failed @ cmdTailscale");
+                    }
                 } else {
                     cmdTailscaleStatus()
                 }
