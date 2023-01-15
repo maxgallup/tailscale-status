@@ -209,13 +209,16 @@ function sendFiles(dest) {
     }
 }
 
-function cmdTailscaleFile(files, dest) { 
-    args = ["pkexec", "tailscale", "file", "cp"]
+function cmdTailscaleFile(files, dest, unprivileged = true) {
+    args = ["file", "cp"]
     args = args.concat(files)
     args.push(dest + ":")
+
+    let command = (unprivileged ? ["tailscale"] : ["pkexec", "tailscale"]).concat(args);
+
     try {
         let proc = Gio.Subprocess.new(
-            args,
+            command,
             Gio.SubprocessFlags.STDOUT_PIPE | Gio.SubprocessFlags.STDERR_PIPE
         );
         proc.communicate_utf8_async(null, null, (proc, res) => {
@@ -224,8 +227,13 @@ function cmdTailscaleFile(files, dest) {
                 if (proc.get_successful()) {
                     Main.notify('Tailscale Files sent to ' + dest);
                 } else {
-                    log("Unable to send files via Tailscale")
-                    Main.notify('Unable to send files via Tailscale', 'check logs with journalctl -f -o cat /usr/bin/gnome-shell');
+                    if (unprivileged) {
+                        log("retrying")
+                        cmdTailscaleFile(files, dest, false);
+                    } else {
+                        log("Unable to send files via Tailscale")
+                        Main.notify('Unable to send files via Tailscale', 'check logs with journalctl -f -o cat /usr/bin/gnome-shell');
+                    }
                 }
             } catch (e) {
                 logError(e);
