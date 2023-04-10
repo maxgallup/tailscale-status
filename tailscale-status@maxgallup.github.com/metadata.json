@@ -4,7 +4,8 @@
   "name": "Tailscale Status",
   "shell-version": [
     "42",
-    "43"
+    "43",
+    "44"
   ],
   "url": "https://github.com/maxgallup/tailscale-status",
   "uuid": "tailscale-status@maxgallup.github.com",
