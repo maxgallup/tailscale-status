@@ -3,7 +3,6 @@ const ExtensionUtils = imports.misc.extensionUtils;
 const Extension = imports.misc.extensionUtils.getCurrentExtension()
 const Util = imports.misc.util
 
-const { makeAsync, glibAsync, asyncTimeout, isCancelled } = Extension.imports.pipe
 
 const Main = imports.ui.main;
 const GObject = imports.gi.GObject;
@@ -50,7 +49,7 @@ let exitNodeMenu;
 let sendMenu;
 let statusItem;
 let authItem;
-let needsLogin = true;
+let needToAuth = true;
 let authUrl;
 
 let health;
@@ -141,12 +140,12 @@ function getUsername(json) {
     return json.Self.HostName
 }
 function setStatus(json) {
-    needsLogin = false
     authItem.label.text = "Logged in: " + getUsername(json);
     authItem.sensitive = false;
     health = json.Health
     switch (json.BackendState) {
         case "Running":
+            needToAuth = true
             icon.gicon = icon_up;
             statusSwitchItem.setToggleState(true);
             statusItem.label.text = statusString + "up (no exit-node)";
@@ -159,6 +158,7 @@ function setStatus(json) {
             setAllItems(true);
             break;
         case "Stopped":
+            needToAuth = true
             icon.gicon = icon_down;
             statusSwitchItem.setToggleState(false);
             statusItem.label.text = statusString + "down";
@@ -167,14 +167,15 @@ function setStatus(json) {
             statusSwitchItem.sensitive = true;
             break;
         case "NeedsLogin":
-            needsLogin = true
             icon.gicon = icon_down;
             statusSwitchItem.setToggleState(false);
             authUrl = json.AuthURL;
+            if (authUrl.length > 0 && needToAuth) {
+                Util.spawn(['xdg-open', authUrl])
+                needToAuth = false
+            }
+
             authItem.sensitive = true;
-            myWarn(`authurl: ${authUrl}`);
-            myWarn(`authurl length: ${authUrl.length}`);
-            
             statusItem.label.text = statusString + "needs login";
             authItem.label.text = "Click to Login"
             
@@ -183,7 +184,7 @@ function setStatus(json) {
             break;
 
         default:
-            warn("Error: unknown state");
+            myError("Error: unknown state");
     }
 }
 
@@ -345,30 +346,6 @@ function cmdTailscale({args, unprivileged = true, addLoginServer = true}) {
     } catch (e) {
         myError(e);
     }
-
-
-
-
-
-    // let command = (unprivileged ? ["tailscale"] : ["pkexec", "tailscale"]).concat(args);
-
-    // // if (args[0] == "up") {
-    // //     args = args.concat(["--operator=$USER"]);
-    // // }
-
-    // // let command = ["tailscale"].concat(args).concat(["||", "pkexec", "tailscale"].concat(args));
-    // if (args[0] == "down") {
-    //     args = ["tailscale"].concat(args)
-
-    // } else {
-    //     args = ["tailscale"].concat(args)
-    //     args = args.concat(["--reset"])
-    // }
-
-    // if (addLoginServer) {
-    //     args = args.concat(["--login-server=" + SETTINGS.get_string('login-server')])
-    // }
-
 }
 
 function cmdTailscaleRecFiles() {
@@ -419,15 +396,15 @@ const TailscalePopup = GObject.registerClass(
                 }
             });
 
+            
+            // ------ MAIN STATUS ITEM ------
             statusItem = new PopupMenu.PopupMenuItem(statusString, { reactive: false });
-            this.menu.addMenuItem(statusItem, 0);
-
 
             // ------ AUTH ITEM ------
             authItem = new PopupMenu.PopupMenuItem("Logged in", false);
             authItem.connect('activate', () => {
                 cmdTailscaleStatus()
-                if (authUrl.length > 0) {
+                if (authUrl.length == 0) {
                     try {
                         cmdTailscale({
                             args: ["up"],
@@ -436,14 +413,10 @@ const TailscalePopup = GObject.registerClass(
                         myError(e);
                     }
                 }
-                Util.spawn(['xdg-open', authUrl])
             });
-
-            this.menu.addMenuItem(authItem, 1);
 
             // ------ MAIN SWITCH ------
             statusSwitchItem = new PopupMenu.PopupSwitchMenuItem("Tailscale", false);
-            this.menu.addMenuItem(statusSwitchItem, 2);
             statusSwitchItem.connect('activate', () => {
                 if (statusSwitchItem.state) {
                     cmdTailscale({ args: ["up"] });
@@ -455,22 +428,15 @@ const TailscalePopup = GObject.registerClass(
                 }
             })
 
-            // ------ SEPARATOR ------
-            this.menu.addMenuItem(new PopupMenu.PopupSeparatorMenuItem());
-
+            
             // ------ NODES ------
             nodesMenu = new PopupMenu.PopupSubMenuMenuItem("Nodes");
             nodes.forEach((node) => {
                 nodesMenu.menu.addMenuItem(new PopupMenu.PopupMenuItem(node.line));
             });
-            this.menu.addMenuItem(nodesMenu);
-
-            // ------ SEPARATOR ------
-            this.menu.addMenuItem(new PopupMenu.PopupSeparatorMenuItem());
-
+            
             // ------ SHIELD ------
             shieldItem = new PopupMenu.PopupSwitchMenuItem("Block Incoming", false);
-            this.menu.addMenuItem(shieldItem);
             shieldItem.connect('activate', () => {
                 if (shieldItem.state) {
                     cmdTailscale({ args: ["up", "--shields-up"] });
@@ -478,10 +444,9 @@ const TailscalePopup = GObject.registerClass(
                     cmdTailscale({ args: ["up", "--shields-up=false", "--reset"] });
                 }
             })
-
+            
             // ------ ACCEPT ROUTES ------
             acceptRoutesItem = new PopupMenu.PopupSwitchMenuItem("Accept Routes", false);
-            this.menu.addMenuItem(acceptRoutesItem);
             acceptRoutesItem.connect('activate', () => {
                 if (acceptRoutesItem.state) {
                     cmdTailscale({ args: ["up", "--accept-routes"] });
@@ -489,10 +454,9 @@ const TailscalePopup = GObject.registerClass(
                     cmdTailscale({ args: ["up", "--accept-routes=false", "--reset"] });
                 }
             })
-
+            
             // ------ ALLOW DIRECT LAN ACCESS ------
             allowLanItem = new PopupMenu.PopupSwitchMenuItem("Allow Direct Lan Access", false);
-            this.menu.addMenuItem(allowLanItem);
             allowLanItem.connect('activate', () => {
                 if (allowLanItem.state) {
                     if (nodes[0].usesExit) {
@@ -506,51 +470,54 @@ const TailscalePopup = GObject.registerClass(
                 }
             })
 
-            // ------ SEPARATOR ------
-            this.menu.addMenuItem(new PopupMenu.PopupSeparatorMenuItem());
-
             // ------ RECEIVE FILES MENU ------
             receiveFilesItem = new PopupMenu.PopupMenuItem("Accept incoming files");
             receiveFilesItem.connect('activate', () => {
                 cmdTailscaleRecFiles();
             })
-            this.menu.addMenuItem(receiveFilesItem);
-
+            
             // ------ SEND FILES MENU ------
             sendMenu = new PopupMenu.PopupSubMenuMenuItem("Send Files");
-            this.menu.addMenuItem(sendMenu);
-
+            
             // ------ EXIT NODES -------
             exitNodeMenu = new PopupMenu.PopupSubMenuMenuItem("Exit Nodes");
-            this.menu.addMenuItem(exitNodeMenu);
-
-            // ------ ABOUT ------
+            
+            // ------ ABOUT MENU------
             let aboutMenu = new PopupMenu.PopupSubMenuMenuItem("About");
-            this.menu.addMenuItem(aboutMenu);
             let healthMenu = new PopupMenu.PopupMenuItem("Health")
             healthMenu.connect('activate', () => {
                 if (health != null) {
                     Main.notify(health.join());
-
+                    
                 } else {
                     Main.notify("null");
                 }
             })
-
             let infoMenu = new PopupMenu.PopupMenuItem("This extension is in no way affiliated with Tailscale Inc.")
             let contributeMenu = new PopupMenu.PopupMenuItem("Contribute")
             contributeMenu.connect('activate', () => {
                 Util.spawn(['xdg-open', "https://github.com/maltegrosse/tailscale-status#contribute"])
             })
+            
 
-            let serverMenu = new PopupMenu.PopupMenuItem("Server: " + SETTINGS.get_string('login-server'));
-            
-            
+            // Order Matters!
+            this.menu.addMenuItem(statusSwitchItem);
+            this.menu.addMenuItem(statusItem);
+            this.menu.addMenuItem(authItem);
+            this.menu.addMenuItem(new PopupMenu.PopupSeparatorMenuItem());
+            this.menu.addMenuItem(nodesMenu);
+            this.menu.addMenuItem(new PopupMenu.PopupSeparatorMenuItem());
+            this.menu.addMenuItem(shieldItem);
+            this.menu.addMenuItem(acceptRoutesItem);
+            this.menu.addMenuItem(allowLanItem);
+            this.menu.addMenuItem(new PopupMenu.PopupSeparatorMenuItem());
+            this.menu.addMenuItem(receiveFilesItem);
+            this.menu.addMenuItem(sendMenu);
+            this.menu.addMenuItem(exitNodeMenu);
+            this.menu.addMenuItem(aboutMenu);
             aboutMenu.menu.addMenuItem(infoMenu);
-            aboutMenu.menu.addMenuItem(serverMenu);
             aboutMenu.menu.addMenuItem(contributeMenu);
             aboutMenu.menu.addMenuItem(healthMenu);
-
         }
     }
 );
@@ -588,95 +555,4 @@ function disable() {
 
 
 }
-let ctx = new Gio.Cancellable()
-let errors = []
-let show_output = true
 
-let launcher = new Gio.SubprocessLauncher({
-    flags: (
-        Gio.SubprocessFlags.STDOUT_PIPE |
-        Gio.SubprocessFlags.STDERR_PIPE
-    )
-})
-
-function Stream(proc) {
-    return new Gio.DataInputStream({
-        base_stream: proc.get_stdout_pipe(),
-        close_base_stream: true
-    })
-}
-async function executeShell(ctx, name, args, timeout_ms = 10000) {
-    //let proc = launcher.spawnv(["pkexec"].concat(args))
-    let proc = launcher.spawnv(args)
-    let stdout = Stream(proc)
-
-    let i = 0
-    let terminated = false
-    let cancel_requested = false
-    let read_error = null
-    let proc_error = null
-    let finish_ok = null
-    let read_ctx = new Gio.Cancellable()
-
-    /** check process status and return if pipe was successful or not */
-    async function finish() {
-        let ok = false
-        try {
-            ok = await glibAsync(
-                (finish) => proc.wait_check_async(null, finish),
-                (_, res) => proc.wait_check_finish(res),
-            )
-        } catch (err) {
-            proc_error = err
-        }
-        if (read_error) myError(read_error)
-        if (cancel_requested) {
-            // ignore exit codes when process was killed by user
-            ok = read_error ? false : true
-        } else {
-            if (proc_error) myError(proc_error)
-            ok = !ok || read_error || proc_error ? false : true
-        }
-        return ok
-    }
-
-    function cancel() {
-        // no manual cancellation need, pipe is already stopping
-        if (terminated) return
-        myWarn(`${name} cancel requested`)
-        cancel_requested = true
-        read_ctx.cancel()
-        proc.force_exit()
-    }
-
-    /** allow early termination of the pipe */
-    if (ctx) ctx.connect(cancel)
-
-    const cancelLater = asyncTimeout(cancel, timeout_ms)
-
-    try {
-        myWarn(` ${name} started`)
-
-        while (true) {
-            try {
-                let line = await glibAsync(
-                    (finish) => stdout.read_line_async(GLib.PRIORITY_LOW, read_ctx, finish),
-                    (_, res) => stdout.read_line_finish_utf8(res)[0],
-                )
-                if (line == null) break
-                if (show_output) print('read', name, 'line:', i++, line)
-            } catch (e) {
-                if (!isCancelled(e)) read_error = e
-                break
-            }
-        }
-        terminated = true
-        finish_ok = await finish()
-    } catch (e) {
-        myError(e)
-        cancel()
-    }
-
-    await cancelLater
-    return { cancel_requested, terminated, finish_ok }
-}
