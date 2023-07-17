@@ -55,6 +55,7 @@ let authUrl;
 
 let health;
 
+let receiveFilesItem
 let shieldItem;
 let acceptRoutesItem;
 let allowLanItem;
@@ -67,6 +68,16 @@ let icon_exit_node;
 let SETTINGS;
 
 let timerId = null;
+
+
+function myWarn(string) {
+    log("🟡 [tailscale-status]: " + string);
+}
+
+function myError(string) {
+    log("🔴 [tailscale-status]: " + string);
+}
+
 
 function extractNodeInfo(json) {
     nodes = [];
@@ -145,46 +156,49 @@ function setStatus(json) {
                     icon.gicon = icon_exit_node;
                 }
             })
-            setSwitches(true);
+            setAllItems(true);
             break;
         case "Stopped":
-
             icon.gicon = icon_down;
             statusSwitchItem.setToggleState(false);
             statusItem.label.text = statusString + "down";
             nodes = [];
-            setSwitches(false);
+            setAllItems(false);
+            statusSwitchItem.sensitive = true;
             break;
         case "NeedsLogin":
-            log('needs login');
             needsLogin = true
             icon.gicon = icon_down;
             statusSwitchItem.setToggleState(false);
             authUrl = json.AuthURL;
             authItem.sensitive = true;
-            if (authUrl.length > 0) {
-
-                statusItem.label.text = statusString + "needs login";
-                authItem.label.text = "Click to Login"
-
-            } else {
-                statusItem.label.text = statusString + "needs reconnect";
-                authItem.label.text = "Click to Reconnect"
-            }
-            setSwitches(false);
+            myWarn(`authurl: ${authUrl}`);
+            myWarn(`authurl length: ${authUrl.length}`);
+            
+            statusItem.label.text = statusString + "needs login";
+            authItem.label.text = "Click to Login"
+            
+            setAllItems(false);
             nodes = [];
             break;
 
         default:
-            log("Error: unknown state");
+            warn("Error: unknown state");
     }
 }
 
-function setSwitches(b) {
-    shieldItem.actor._activatable = b;
-    acceptRoutesItem.actor._activatable = b;
-    allowLanItem.actor._activatable = b;
+function setAllItems(b) {
+    shieldItem.sensitive = b;
+    acceptRoutesItem.sensitive = b;
+    allowLanItem.sensitive = b;
+    statusSwitchItem.sensitive = b;
+    receiveFilesItem.sensitive = b;
+    nodesMenu.sensitive = b;
+    sendMenu.sensitive = b;
+    exitNodeMenu.sensitive = b;
 }
+
+
 
 function refreshNodesMenu() {
     nodesMenu.menu.removeAll();
@@ -205,7 +219,7 @@ function refreshExitNodesMenu() {
         if (node.offersExit) {
             var item = new PopupMenu.PopupMenuItem(node.name)
             item.connect('activate', () => {
-                cmdTailscale(["up", "--exit-node=" + node.address, "--reset"])
+                cmdTailscale({ args: ["up", "--exit-node=" + node.address, "--reset"] })
             });
             if (node.usesExit) {
                 item.setOrnament(1);
@@ -220,7 +234,7 @@ function refreshExitNodesMenu() {
 
     var noneItem = new PopupMenu.PopupMenuItem('None');
     noneItem.connect('activate', () => {
-        cmdTailscale(["up", "--exit-node=", "--reset"]);
+        cmdTailscale({args: ["up", "--exit-node=", "--reset"] });
     });
     (uses_exit) ? noneItem.setOrnament(0) : noneItem.setOrnament(1);
     exitNodeMenu.menu.addMenuItem(noneItem, 0);
@@ -254,14 +268,14 @@ function sendFiles(dest) {
                         cmdTailscaleFile(files, dest)
                     }
                 } else {
-                    logError("zenity failed");
+                    myError("zenity failed");
                 }
             } catch (e) {
-                logError(e);
+                myError(e);
             }
         });
     } catch (e) {
-        logError(e);
+        myError(e);
     }
 }
 
@@ -269,8 +283,6 @@ function sendFiles(dest) {
 
 
 function cmdTailscaleStatus() {
-    // let res = testScript(ctx, 'status', 'tailscale status --json').then(res => log(res))
-
     try {
         let proc = Gio.Subprocess.new(
             // ["curl", "--silent", "--unix-socket", "/run/tailscale/tailscaled.sock", "http://localhost/localapi/v0/status" ],
@@ -290,59 +302,73 @@ function cmdTailscaleStatus() {
                     refreshNodesMenu();
                 }
             } catch (e) {
-                logError(e);
+                myError(e);
             }
         });
     } catch (e) {
-        logError(e);
+        myError(e);
     }
 }
 
-function cmdTailscale(args, addLoginServer = true) {
-
-    // if (args[0] == "up") {
-    //     args = args.concat(["--operator=$USER"]);
-    // }
-
-    // let command = ["tailscale"].concat(args).concat(["||", "pkexec", "tailscale"].concat(args));
-    if (args[0] == "down") {
-        args = ["pkexec", "tailscale"].concat(args)
-
-    } else {
-        args = ["pkexec", "tailscale"].concat(args)
-        args = args.concat(["--reset"])
-    }
-
+function cmdTailscale({args, unprivileged = true, addLoginServer = true}) {
     if (addLoginServer) {
         args = args.concat(["--login-server=" + SETTINGS.get_string('login-server')])
     }
 
-    log("cmdTailscale:", args)
-    executeShell(ctx, 'cmd', args).then(() => cmdTailscaleStatus()).catch(e => logError(e))
+    let command = (unprivileged ? ["tailscale"] : ["pkexec", "tailscale"]).concat(args);
 
-    // try {
-    //     let proc = Gio.Subprocess.new(
-    //         ["pkexec", "tailscale"].concat(args),
-    //         Gio.SubprocessFlags.STDOUT_PIPE | Gio.SubprocessFlags.STDERR_PIPE
-    //     );
-    //     log(proc.STDOUT_PIPE)
-    //     proc.communicate_utf8_async(null, null, (proc, res) => {
-    //         log(res)
-    //         try {
-    //             proc.communicate_utf8_finish(res);
-    //             if (!proc.get_successful()) {
-    //                 log(args);
-    //                 log("failed @ cmdTailscale");
-    //             } else {
-    //                 cmdTailscaleStatus()
-    //             }
-    //         } catch (e) {
-    //             logError(e);
-    //         }
-    //     });
-    // } catch (e) {
-    //     logError(e);
+    try {
+        let proc = Gio.Subprocess.new(
+            command,
+            Gio.SubprocessFlags.STDOUT_PIPE | Gio.SubprocessFlags.STDERR_PIPE
+        );
+        proc.communicate_utf8_async(null, null, (proc, res) => {
+            try {
+                proc.communicate_utf8_finish(res);
+                if (!proc.get_successful()) {
+                    if (unprivileged) {
+                        cmdTailscale({
+                            args: args[0] == "up" ? args.concat(["--operator=" + GLib.get_user_name(), "--reset"]) : args,
+                            unprivileged: false,
+                            addLoginServer: true
+                        })
+                    } else {
+                        myWarn("failed @ cmdTailscale");
+                    }
+                } else {
+                    cmdTailscaleStatus()
+                }
+            } catch (e) {
+                myError(e);
+            }
+        });
+    } catch (e) {
+        myError(e);
+    }
+
+
+
+
+
+    // let command = (unprivileged ? ["tailscale"] : ["pkexec", "tailscale"]).concat(args);
+
+    // // if (args[0] == "up") {
+    // //     args = args.concat(["--operator=$USER"]);
+    // // }
+
+    // // let command = ["tailscale"].concat(args).concat(["||", "pkexec", "tailscale"].concat(args));
+    // if (args[0] == "down") {
+    //     args = ["tailscale"].concat(args)
+
+    // } else {
+    //     args = ["tailscale"].concat(args)
+    //     args = args.concat(["--reset"])
     // }
+
+    // if (addLoginServer) {
+    //     args = args.concat(["--login-server=" + SETTINGS.get_string('login-server')])
+    // }
+
 }
 
 function cmdTailscaleRecFiles() {
@@ -358,14 +384,14 @@ function cmdTailscaleRecFiles() {
                     Main.notify('Saved files to ' + downloads_path);
                 } else {
                     Main.notify('Unable to receive files to ' + downloads_path, 'check logs with journalctl -f -o cat /usr/bin/gnome-shell');
-                    log("failed to accept files to " + downloads_path)
+                    myWarn("failed to accept files to " + downloads_path)
                 }
             } catch (e) {
-                logError(e);
+                myError(e);
             }
         });
     } catch (e) {
-        logError(e);
+        myError(e);
     }
 }
 
@@ -397,36 +423,35 @@ const TailscalePopup = GObject.registerClass(
             this.menu.addMenuItem(statusItem, 0);
 
 
+            // ------ AUTH ITEM ------
             authItem = new PopupMenu.PopupMenuItem("Logged in", false);
             authItem.connect('activate', () => {
+                cmdTailscaleStatus()
                 if (authUrl.length > 0) {
-
-                    Util.spawn(['xdg-open', authUrl])
-                    log("open auth url", authUrl)
-                } else {
-                    // sometimes "NeedsLogin" but authURL is empty
                     try {
-                        cmdTailscale(["down"], false);
+                        cmdTailscale({
+                            args: ["up"],
+                        });
                     } catch (e) {
-                        logError(e);
+                        myError(e);
                     }
-
-
                 }
-
-
+                Util.spawn(['xdg-open', authUrl])
             });
 
             this.menu.addMenuItem(authItem, 1);
 
-
+            // ------ MAIN SWITCH ------
             statusSwitchItem = new PopupMenu.PopupSwitchMenuItem("Tailscale", false);
             this.menu.addMenuItem(statusSwitchItem, 2);
             statusSwitchItem.connect('activate', () => {
                 if (statusSwitchItem.state) {
-                    cmdTailscale(["up"]);
+                    cmdTailscale({ args: ["up"] });
                 } else {
-                    cmdTailscale(["down"], false);
+                    cmdTailscale({
+                        args: ["down"],
+                        addLoginServer: false
+                    });
                 }
             })
 
@@ -448,9 +473,9 @@ const TailscalePopup = GObject.registerClass(
             this.menu.addMenuItem(shieldItem);
             shieldItem.connect('activate', () => {
                 if (shieldItem.state) {
-                    cmdTailscale(["up", "--shields-up"]);
+                    cmdTailscale({ args: ["up", "--shields-up"] });
                 } else {
-                    cmdTailscale(["up", "--shields-up=false", "--reset"]);
+                    cmdTailscale({ args: ["up", "--shields-up=false", "--reset"] });
                 }
             })
 
@@ -459,9 +484,9 @@ const TailscalePopup = GObject.registerClass(
             this.menu.addMenuItem(acceptRoutesItem);
             acceptRoutesItem.connect('activate', () => {
                 if (acceptRoutesItem.state) {
-                    cmdTailscale(["up", "--accept-routes"]);
+                    cmdTailscale({ args: ["up", "--accept-routes"] });
                 } else {
-                    cmdTailscale(["up", "--accept-routes=false", "--reset"]);
+                    cmdTailscale({ args: ["up", "--accept-routes=false", "--reset"] });
                 }
             })
 
@@ -471,13 +496,13 @@ const TailscalePopup = GObject.registerClass(
             allowLanItem.connect('activate', () => {
                 if (allowLanItem.state) {
                     if (nodes[0].usesExit) {
-                        cmdTailscale(["up", "--exit-node-allow-lan-access"]);
+                        cmdTailscale({ args: ["up", "--exit-node-allow-lan-access"] });
                     } else {
                         Main.notify("Must setup exit node first");
                         allowLanItem.setToggleState(false);
                     }
                 } else {
-                    cmdTailscale(["up", "--exit-node-allow-lan-access=false", "--reset"]);
+                    cmdTailscale({ args: ["up", "--exit-node-allow-lan-access=false", "--reset"] });
                 }
             })
 
@@ -485,7 +510,7 @@ const TailscalePopup = GObject.registerClass(
             this.menu.addMenuItem(new PopupMenu.PopupSeparatorMenuItem());
 
             // ------ RECEIVE FILES MENU ------
-            let receiveFilesItem = new PopupMenu.PopupMenuItem("Accept incoming files");
+            receiveFilesItem = new PopupMenu.PopupMenuItem("Accept incoming files");
             receiveFilesItem.connect('activate', () => {
                 cmdTailscaleRecFiles();
             })
@@ -513,21 +538,18 @@ const TailscalePopup = GObject.registerClass(
             })
 
             let infoMenu = new PopupMenu.PopupMenuItem("This extension is in no way affiliated with Tailscale Inc.")
-            let gitMenu = new PopupMenu.PopupMenuItem("Github")
-            gitMenu.connect('activate', () => {
-                Util.spawn(['xdg-open', "https://github.com/maxgallup/tailscale-status"])
+            let contributeMenu = new PopupMenu.PopupMenuItem("Contribute")
+            contributeMenu.connect('activate', () => {
+                Util.spawn(['xdg-open', "https://github.com/maltegrosse/tailscale-status#contribute"])
             })
-            
-            let serverMenu = new PopupMenu.PopupMenuItem("Server")
-            serverMenu.connect('activate', () => {
-                Main.notify(SETTINGS.get_string('login-server'));
 
-            })
+            let serverMenu = new PopupMenu.PopupMenuItem("Server: " + SETTINGS.get_string('login-server'));
+            
             
             aboutMenu.menu.addMenuItem(infoMenu);
-            // aboutMenu.menu.addMenuItem(healthMenu);
-            aboutMenu.menu.addMenuItem(gitMenu);
             aboutMenu.menu.addMenuItem(serverMenu);
+            aboutMenu.menu.addMenuItem(contributeMenu);
+            aboutMenu.menu.addMenuItem(healthMenu);
 
         }
     }
@@ -607,12 +629,12 @@ async function executeShell(ctx, name, args, timeout_ms = 10000) {
         } catch (err) {
             proc_error = err
         }
-        if (read_error) logError(read_error)
+        if (read_error) myError(read_error)
         if (cancel_requested) {
             // ignore exit codes when process was killed by user
             ok = read_error ? false : true
         } else {
-            if (proc_error) logError(proc_error)
+            if (proc_error) myError(proc_error)
             ok = !ok || read_error || proc_error ? false : true
         }
         return ok
@@ -621,7 +643,7 @@ async function executeShell(ctx, name, args, timeout_ms = 10000) {
     function cancel() {
         // no manual cancellation need, pipe is already stopping
         if (terminated) return
-        log(`${name} cancel requested`)
+        myWarn(`${name} cancel requested`)
         cancel_requested = true
         read_ctx.cancel()
         proc.force_exit()
@@ -633,7 +655,7 @@ async function executeShell(ctx, name, args, timeout_ms = 10000) {
     const cancelLater = asyncTimeout(cancel, timeout_ms)
 
     try {
-        log(` ${name} started`)
+        myWarn(` ${name} started`)
 
         while (true) {
             try {
@@ -651,7 +673,7 @@ async function executeShell(ctx, name, args, timeout_ms = 10000) {
         terminated = true
         finish_ok = await finish()
     } catch (e) {
-        logError(e)
+        myError(e)
         cancel()
     }
 
