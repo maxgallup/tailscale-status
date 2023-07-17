@@ -512,27 +512,22 @@ const TailscalePopup = GObject.registerClass(
                 }
             })
 
-            aboutMenu.menu.addMenuItem(healthMenu);
-
-            //  aboutMenu.menu.addMenuItem(new PopupMenu.PopupMenuItem("The Tailscale Status extension is in no way affiliated with Tailscale Inc."));
-            //  aboutMenu.menu.addMenuItem(new PopupMenu.PopupMenuItem("Open an issue or pull request at github.com/maxgallup/tailscale-status"));
+            let infoMenu = new PopupMenu.PopupMenuItem("This extension is in no way affiliated with Tailscale Inc.")
             let gitMenu = new PopupMenu.PopupMenuItem("Github")
             gitMenu.connect('activate', () => {
                 Util.spawn(['xdg-open', "https://github.com/maxgallup/tailscale-status"])
             })
-            aboutMenu.menu.addMenuItem(gitMenu);
-
-            let infoMenu = new PopupMenu.PopupMenuItem("Info")
-            infoMenu.connect('activate', () => {
-                Main.notify("This extension is in no way affiliated with Tailscale Inc.");
-            })
+            
             let serverMenu = new PopupMenu.PopupMenuItem("Server")
             serverMenu.connect('activate', () => {
                 Main.notify(SETTINGS.get_string('login-server'));
 
             })
-            aboutMenu.menu.addMenuItem(serverMenu);
+            
             aboutMenu.menu.addMenuItem(infoMenu);
+            // aboutMenu.menu.addMenuItem(healthMenu);
+            aboutMenu.menu.addMenuItem(gitMenu);
+            aboutMenu.menu.addMenuItem(serverMenu);
 
         }
     }
