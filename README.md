@@ -25,7 +25,7 @@ Download the `tailscale-status@maxgallup.github.com` directory and move it to `~
 Enable the extension in *Extensions* or *Extension Manager*.
 You might have to log in and out for the extension to be loaded.
 
-### Contribution info
+### Contribute
 This has been tested with [PopOS 22.04](https://pop.system76.com/) and gnome 42 on a Lenovo Ideapad laptop. Feel free to open [pull requests](https://github.com/maxgallup/tailscale-status/pulls) to improve the extension!
 
 ### TODOs

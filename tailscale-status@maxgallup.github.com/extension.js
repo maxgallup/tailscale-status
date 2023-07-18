@@ -1,4 +1,9 @@
-const {St, Clutter} = imports.gi;
+const { St, Clutter } = imports.gi;
+const ExtensionUtils = imports.misc.extensionUtils;
+const Extension = imports.misc.extensionUtils.getCurrentExtension()
+const Util = imports.misc.util
+
+
 const Main = imports.ui.main;
 const GObject = imports.gi.GObject;
 const GLib = imports.gi.GLib;
@@ -6,6 +11,7 @@ const Gio = imports.gi.Gio;
 
 const PanelMenu = imports.ui.panelMenu;
 const PopupMenu = imports.ui.popupMenu;
+
 const Me = imports.misc.extensionUtils.getCurrentExtension();
 
 const statusString = "Status: ";
@@ -37,11 +43,24 @@ class TailscaleNode {
 }
 
 let nodes = [];
+let accounts = [];
+let currentAccount = "";
 
 let nodesMenu;
+let accountButton;
+let accountsMenu;
+let accountIndicator;
+let logoutButton;
 let exitNodeMenu;
 let sendMenu;
 let statusItem;
+let authItem;
+let needToAuth = true;
+let authUrl;
+
+let health;
+
+let receiveFilesItem
 let shieldItem;
 let acceptRoutesItem;
 let allowLanItem;
@@ -51,33 +70,48 @@ let icon;
 let icon_down;
 let icon_up;
 let icon_exit_node;
-
+let SETTINGS;
 
 let timerId = null;
+
+
+function myWarn(string) {
+    log("🟡 [tailscale-status]: " + string);
+}
+
+function myError(string) {
+    log("🔴 [tailscale-status]: " + string);
+}
+
 
 function extractNodeInfo(json) {
     nodes = [];
 
     var me = json.Self;
-    nodes.push(new TailscaleNode(
-        me.DNSName.split(".")[0],
-        me.TailscaleIPs[0],
-        me.Online,
-        me.ExitNodeOption,
-        me.ExitNode,
-        true
-    ));
-    
+    if (me.TailscaleIPs != null) {
+        nodes.push(new TailscaleNode(
+            me.DNSName.split(".")[0],
+            me.TailscaleIPs[0],
+            me.Online,
+            me.ExitNodeOption,
+            me.ExitNode,
+            true
+        )
+        );
+    }
     for (let p in json.Peer) {
         var n = json.Peer[p];
-        nodes.push(new TailscaleNode(
-            n.DNSName.split(".")[0],
-            n.TailscaleIPs[0],
-            n.Online,
-            n.ExitNodeOption,
-            n.ExitNode,
-            false
-        ));
+        if (n.TailscaleIPs != null) {
+            nodes.push(new TailscaleNode(
+                n.DNSName.split(".")[0],
+                n.TailscaleIPs[0],
+                n.Online,
+                n.ExitNodeOption,
+                n.ExitNode,
+                false
+            ));
+        }
+
     }
     nodes.sort(sortNodes)
 }
@@ -97,42 +131,89 @@ function sortNodes(a, b) {
         return 0;
     }
 }
-
+function getUsername(json) {
+    let id = 0
+    if (json.Self.UserID != null) {
+        id = json.Self.UserID
+    }
+    if (json.User != null) {
+        for (const [key, value] of Object.entries(json.User)) {
+            if (value.ID === id) {
+                return value.LoginName
+            }
+        }
+    }
+    return json.Self.HostName
+}
 function setStatus(json) {
+    authItem.label.text = "Logged in: " + getUsername(json);
+    accountIndicator.label.text = "Account: " + currentAccount;
+    authItem.sensitive = false;
+    health = json.Health
     switch (json.BackendState) {
         case "Running":
+            needToAuth = true
             icon.gicon = icon_up;
             statusSwitchItem.setToggleState(true);
             statusItem.label.text = statusString + "up (no exit-node)";
-            nodes.forEach( (node) => {
+            nodes.forEach((node) => {
                 if (node.usesExit) {
                     statusItem.label.text = statusString + "up (exit-node: " + node.name + ")";
                     icon.gicon = icon_exit_node;
                 }
             })
-            setSwitches(true);
+            setAllItems(true);
             break;
         case "Stopped":
+            needToAuth = true
             icon.gicon = icon_down;
             statusSwitchItem.setToggleState(false);
             statusItem.label.text = statusString + "down";
             nodes = [];
-            setSwitches(false);
+            setAllItems(false);
+            statusSwitchItem.sensitive = true;
             break;
+        case "NeedsLogin":
+            icon.gicon = icon_down;
+            statusSwitchItem.setToggleState(false);
+            authUrl = json.AuthURL;
+            if (authUrl.length > 0 && needToAuth) {
+                Util.spawn(['xdg-open', authUrl])
+                needToAuth = false
+            }
+
+            authItem.sensitive = true;
+            statusItem.label.text = statusString + "needs login";
+            authItem.label.text = "Click to Login"
+            
+            setAllItems(false);
+            nodes = [];
+            break;
+
         default:
-            log("Error: unknown state");
+            myError("Error: unknown state");
     }
 }
 
-function setSwitches(b) {
-    shieldItem.actor._activatable = b;
-    acceptRoutesItem.actor._activatable = b;
-    allowLanItem.actor._activatable = b;
+function setAllItems(b) {
+    shieldItem.sensitive = b;
+    acceptRoutesItem.sensitive = b;
+    allowLanItem.sensitive = b;
+    statusSwitchItem.sensitive = b;
+    receiveFilesItem.sensitive = b;
+    nodesMenu.sensitive = b;
+    sendMenu.sensitive = b;
+    exitNodeMenu.sensitive = b;
+    accountsMenu.sensitive = b;
+    accountButton.sensitive = b;
+    logoutButton.sensitive = b;
 }
+
+
 
 function refreshNodesMenu() {
     nodesMenu.menu.removeAll();
-    nodes.forEach( (node) => {
+    nodes.forEach((node) => {
         let item = new PopupMenu.PopupMenuItem(node.line)
         item.connect('activate', () => {
             St.Clipboard.get_default().set_text(St.ClipboardType.CLIPBOARD, node.address);
@@ -142,29 +223,31 @@ function refreshNodesMenu() {
     });
 }
 
+
+
 function refreshExitNodesMenu() {
     exitNodeMenu.menu.removeAll();
     var uses_exit = false;
-    nodes.forEach( (node) => {
+    nodes.forEach((node) => {
         if (node.offersExit) {
-        var item = new PopupMenu.PopupMenuItem(node.name)
-        item.connect('activate', () => {
-            cmdTailscale(["up", "--exit-node="+item.label.text, "--reset"])
-        });
-        if (node.usesExit) {
-            item.setOrnament(1);
-            exitNodeMenu.menu.addMenuItem(item);
-            uses_exit = true;
-        } else {
-            item.setOrnament(0);
-            exitNodeMenu.menu.addMenuItem(item);
-        }
+            var item = new PopupMenu.PopupMenuItem(node.name)
+            item.connect('activate', () => {
+                cmdTailscale({ args: ["up", "--exit-node=" + node.address, "--reset"] })
+            });
+            if (node.usesExit) {
+                item.setOrnament(1);
+                exitNodeMenu.menu.addMenuItem(item);
+                uses_exit = true;
+            } else {
+                item.setOrnament(0);
+                exitNodeMenu.menu.addMenuItem(item);
+            }
         }
     })
-    
+
     var noneItem = new PopupMenu.PopupMenuItem('None');
     noneItem.connect('activate', () => {
-        cmdTailscale(["up", "--exit-node=", "--reset"]);
+        cmdTailscale({args: ["up", "--exit-node=", "--reset"] });
     });
     (uses_exit) ? noneItem.setOrnament(0) : noneItem.setOrnament(1);
     exitNodeMenu.menu.addMenuItem(noneItem, 0);
@@ -172,7 +255,7 @@ function refreshExitNodesMenu() {
 
 function refreshSendMenu() {
     sendMenu.menu.removeAll();
-    nodes.forEach( (node) => {
+    nodes.forEach((node) => {
         if (node.online && !node.isSelf) {
             var item = new PopupMenu.PopupMenuItem(node.name)
             item.connect('activate', () => {
@@ -198,22 +281,20 @@ function sendFiles(dest) {
                         cmdTailscaleFile(files, dest)
                     }
                 } else {
-                    logError("zenity failed");
+                    myError("zenity failed");
                 }
             } catch (e) {
-                logError(e);
+                myError(e);
             }
         });
     } catch (e) {
-        logError(e);
+        myError(e);
     }
 }
 
-function cmdTailscaleFile(files, dest, unprivileged = true) {
-    args = ["file", "cp"]
-    args = args.concat(files)
-    args.push(dest + ":")
 
+function cmdTailscaleSwitchList(unprivileged  = true) {
+    args = ["switch", "--list"]
     let command = (unprivileged ? ["tailscale"] : ["pkexec", "tailscale"]).concat(args);
 
     try {
@@ -223,36 +304,64 @@ function cmdTailscaleFile(files, dest, unprivileged = true) {
         );
         proc.communicate_utf8_async(null, null, (proc, res) => {
             try {
-                proc.communicate_utf8_finish(res);
+                let [, stdout, stderr] = proc.communicate_utf8_finish(res);
                 if (proc.get_successful()) {
-                    Main.notify('Tailscale Files sent to ' + dest);
+                    accounts = stdout.split("\n")
+                    accounts = accounts.filter((item) => item.length > 0)
+                    accountsMenu.menu.removeAll()
+                    accounts.forEach((account) => {
+                        if (account.slice(-2) == " *") {
+                            currentAccount = account
+                            account = account.slice(0, -2)
+                        }
+                        let accountItem = new PopupMenu.PopupMenuItem(account)
+                        accountItem.connect('activate', () => {
+                            cmdTailscaleSwitch(account)
+                        });
+                        accountsMenu.menu.addMenuItem(accountItem);
+                    });
                 } else {
                     if (unprivileged) {
-                        log("retrying")
-                        cmdTailscaleFile(files, dest, false);
+                        myWarn("retrying tailscale switch --list")
+                        cmdTailscaleSwitchList(false)
                     } else {
-                        log("Unable to send files via Tailscale")
-                        Main.notify('Unable to send files via Tailscale', 'check logs with journalctl -f -o cat /usr/bin/gnome-shell');
+                        myError("cmd 'tailscale switch --list' failed")
                     }
                 }
             } catch (e) {
-                logError(e);
+                myError(e);
             }
         });
     } catch (e) {
-        logError(e);
+        myError(e);
     }
 }
 
+function cmdTailscaleSwitch(account) {
+    if (currentAccount == account) {
+        Main.notify("Already logged in with " + account)
+        return
+    } else {
+        Main.notify("Switching to " + account)
+        currentAccount = account
+    }
+
+    cmdTailscale({
+        args: ["switch", account],
+        addLoginServer: false
+    })
+
+}
 
 function cmdTailscaleStatus() {
     try {
         let proc = Gio.Subprocess.new(
-          // ["curl", "--silent", "--unix-socket", "/run/tailscale/tailscaled.sock", "http://localhost/localapi/v0/status" ],
-          ["tailscale", "status", "--json"],
-          Gio.SubprocessFlags.STDOUT_PIPE | Gio.SubprocessFlags.STDERR_PIPE
+            // ["curl", "--silent", "--unix-socket", "/run/tailscale/tailscaled.sock", "http://localhost/localapi/v0/status" ],
+            ["tailscale", "status", "--json"],
+            Gio.SubprocessFlags.STDOUT_PIPE | Gio.SubprocessFlags.STDERR_PIPE
         );
         proc.communicate_utf8_async(null, null, (proc, res) => {
+
             try {
                 let [, stdout, stderr] = proc.communicate_utf8_finish(res);
                 if (proc.get_successful()) {
@@ -264,15 +373,19 @@ function cmdTailscaleStatus() {
                     refreshNodesMenu();
                 }
             } catch (e) {
-                logError(e);
+                myError(e);
             }
         });
     } catch (e) {
-        logError(e);
+        myError(e);
     }
 }
 
-function cmdTailscale(args, unprivileged = true) {
+function cmdTailscale({args, unprivileged = true, addLoginServer = true}) {
+    if (addLoginServer) {
+        args = args.concat(["--login-server=" + SETTINGS.get_string('login-server')])
+    }
+
     let command = (unprivileged ? ["tailscale"] : ["pkexec", "tailscale"]).concat(args);
 
     try {
@@ -285,19 +398,23 @@ function cmdTailscale(args, unprivileged = true) {
                 proc.communicate_utf8_finish(res);
                 if (!proc.get_successful()) {
                     if (unprivileged) {
-                        cmdTailscale(args[0] == "up" ? args.concat(["--operator=" + GLib.get_user_name(), "--reset"]) : args, false)
+                        cmdTailscale({
+                            args: args[0] == "up" ? args.concat(["--operator=" + GLib.get_user_name(), "--reset"]) : args,
+                            unprivileged: false,
+                            addLoginServer: addLoginServer
+                        })
                     } else {
-                        log("failed @ cmdTailscale");
+                        myWarn("failed @ cmdTailscale");
                     }
                 } else {
                     cmdTailscaleStatus()
                 }
             } catch (e) {
-                logError(e);
+                myError(e);
             }
         });
     } catch (e) {
-        logError(e);
+        myError(e);
     }
 }
 
@@ -314,33 +431,33 @@ function cmdTailscaleRecFiles() {
                     Main.notify('Saved files to ' + downloads_path);
                 } else {
                     Main.notify('Unable to receive files to ' + downloads_path, 'check logs with journalctl -f -o cat /usr/bin/gnome-shell');
-                    log("failed to accept files to " + downloads_path)
+                    myWarn("failed to accept files to " + downloads_path)
                 }
             } catch (e) {
-                logError(e);
+                myError(e);
             }
         });
     } catch (e) {
-        logError(e);
+        myError(e);
     }
 }
 
 const TailscalePopup = GObject.registerClass(
     class TailscalePopup extends PanelMenu.Button {
 
-        _init () {
+        _init() {
             super._init(0);
 
-            
-            icon_down = Gio.icon_new_for_string( Me.dir.get_path() + '/icon-down.svg' );
-            icon_up = Gio.icon_new_for_string( Me.dir.get_path() + '/icon-up.svg' );
-            icon_exit_node = Gio.icon_new_for_string( Me.dir.get_path() + '/icon-exit-node.svg' );
-            
+
+            icon_down = Gio.icon_new_for_string(Me.dir.get_path() + '/icon-down.svg');
+            icon_up = Gio.icon_new_for_string(Me.dir.get_path() + '/icon-up.svg');
+            icon_exit_node = Gio.icon_new_for_string(Me.dir.get_path() + '/icon-exit-node.svg');
+
             icon = new St.Icon({
-                gicon : icon_down,
-                style_class : 'system-status-icon',
+                gicon: icon_down,
+                style_class: 'system-status-icon',
             });
-            
+
             this.add_child(icon);
 
             this.menu.connect('open-state-changed', (menu, open) => {
@@ -349,106 +466,169 @@ const TailscalePopup = GObject.registerClass(
                 }
             });
 
-            statusItem = new PopupMenu.PopupMenuItem( statusString, {reactive : false} );
-            this.menu.addMenuItem(statusItem, 0);
+            
+            // ------ MAIN STATUS ITEM ------
+            statusItem = new PopupMenu.PopupMenuItem(statusString, { reactive: false });
+
+            // ------ AUTH ITEM ------
+            authItem = new PopupMenu.PopupMenuItem("Logged in", false);
+            
+            authItem.connect('activate', () => {
+                cmdTailscaleStatus()
+                if (authUrl.length == 0) {
+                    try {
+                        cmdTailscale({
+                            args: ["up"],
+                        });
+                    } catch (e) {
+                        myError(e);
+                    }
+                }
+            });
 
 
+            // ------ ACCOUNT INDICATOR ------
+            accountIndicator = new PopupMenu.PopupMenuItem("Account: ", { reactive: false});
+
+            // ------ MAIN SWITCH ------
             statusSwitchItem = new PopupMenu.PopupSwitchMenuItem("Tailscale", false);
-            this.menu.addMenuItem(statusSwitchItem,1);
             statusSwitchItem.connect('activate', () => {
                 if (statusSwitchItem.state) {
-                    cmdTailscale(["up"]);
+                    cmdTailscale({ args: ["up"] });
                 } else {
-                    cmdTailscale(["down"]);
+                    cmdTailscale({
+                        args: ["down"],
+                        addLoginServer: false
+                    });
                 }
             })
 
-            // ------ SEPARATOR ------
-            this.menu.addMenuItem( new PopupMenu.PopupSeparatorMenuItem());
+            // ------ UPDATE ACCOUNTS ------
+            accountButton = new PopupMenu.PopupMenuItem("Update Account list");
+            accountButton.connect('activate', (item) => {
+                cmdTailscaleSwitchList()
+            })
+
+            // ------ ACCOUNTS ------
+            accountsMenu = new PopupMenu.PopupSubMenuMenuItem("Accounts");
 
             // ------ NODES ------
             nodesMenu = new PopupMenu.PopupSubMenuMenuItem("Nodes");
-            nodes.forEach( (node) => {
-                nodesMenu.menu.addMenuItem( new PopupMenu.PopupMenuItem(node.line) );
+            nodes.forEach((node) => {
+                nodesMenu.menu.addMenuItem(new PopupMenu.PopupMenuItem(node.line));
             });
-            this.menu.addMenuItem(nodesMenu);
-
-            // ------ SEPARATOR ------
-            this.menu.addMenuItem( new PopupMenu.PopupSeparatorMenuItem());
 
             // ------ SHIELD ------
             shieldItem = new PopupMenu.PopupSwitchMenuItem("Block Incoming", false);
-            this.menu.addMenuItem(shieldItem);
             shieldItem.connect('activate', () => {
                 if (shieldItem.state) {
-                    cmdTailscale(["up", "--shields-up"]);
+                    cmdTailscale({ args: ["up", "--shields-up"] });
                 } else {
-                    cmdTailscale(["up", "--shields-up=false", "--reset"]);
+                    cmdTailscale({ args: ["up", "--shields-up=false", "--reset"] });
                 }
             })
 
+            
             // ------ ACCEPT ROUTES ------
             acceptRoutesItem = new PopupMenu.PopupSwitchMenuItem("Accept Routes", false);
-            this.menu.addMenuItem(acceptRoutesItem);
             acceptRoutesItem.connect('activate', () => {
                 if (acceptRoutesItem.state) {
-                    cmdTailscale(["up", "--accept-routes"]);
+                    cmdTailscale({ args: ["up", "--accept-routes"] });
                 } else {
-                    cmdTailscale(["up", "--accept-routes=false", "--reset"]);
+                    cmdTailscale({ args: ["up", "--accept-routes=false", "--reset"] });
                 }
             })
-
+            
             // ------ ALLOW DIRECT LAN ACCESS ------
             allowLanItem = new PopupMenu.PopupSwitchMenuItem("Allow Direct Lan Access", false);
-            this.menu.addMenuItem(allowLanItem);
             allowLanItem.connect('activate', () => {
                 if (allowLanItem.state) {
                     if (nodes[0].usesExit) {
-                        cmdTailscale(["up", "--exit-node-allow-lan-access"]);
+                        cmdTailscale({ args: ["up", "--exit-node-allow-lan-access"] });
                     } else {
                         Main.notify("Must setup exit node first");
                         allowLanItem.setToggleState(false);
                     }
                 } else {
-                    cmdTailscale(["up", "--exit-node-allow-lan-access=false", "--reset"]);
+                    cmdTailscale({ args: ["up", "--exit-node-allow-lan-access=false", "--reset"] });
                 }
             })
 
-            // ------ SEPARATOR ------
-            this.menu.addMenuItem( new PopupMenu.PopupSeparatorMenuItem());
-
             // ------ RECEIVE FILES MENU ------
-            let receiveFilesItem = new PopupMenu.PopupMenuItem("Accept incoming files");
+            receiveFilesItem = new PopupMenu.PopupMenuItem("Accept incoming files");
             receiveFilesItem.connect('activate', () => {
                 cmdTailscaleRecFiles();
             })
-            this.menu.addMenuItem(receiveFilesItem);
-
+            
             // ------ SEND FILES MENU ------
             sendMenu = new PopupMenu.PopupSubMenuMenuItem("Send Files");
-            this.menu.addMenuItem(sendMenu);
-
+            
             // ------ EXIT NODES -------
             exitNodeMenu = new PopupMenu.PopupSubMenuMenuItem("Exit Nodes");
-            this.menu.addMenuItem(exitNodeMenu);
-
-            // ------ ABOUT ------
+            
+            // ------ LOG OUT -------
+            logoutButton = new PopupMenu.PopupMenuItem("Log Out");
+            logoutButton.connect('activate', () => {
+                cmdTailscale({
+                    args: ["logout"],
+                    addLoginServer: false,
+                });
+            })
+            
+            // ------ ABOUT MENU------
             let aboutMenu = new PopupMenu.PopupSubMenuMenuItem("About");
-            this.menu.addMenuItem(aboutMenu);
-            aboutMenu.menu.addMenuItem(new PopupMenu.PopupMenuItem("The Tailscale Status extension is in no way affiliated with Tailscale Inc."));
-            aboutMenu.menu.addMenuItem(new PopupMenu.PopupMenuItem("Open an issue or pull request at github.com/maxgallup/tailscale-status"));
+            let healthMenu = new PopupMenu.PopupMenuItem("Health")
+            healthMenu.connect('activate', () => {
+                if (health != null) {
+                    Main.notify(health.join());
+                    
+                } else {
+                    Main.notify("null");
+                }
+            })
+            let infoMenu = new PopupMenu.PopupMenuItem("This extension is in no way affiliated with Tailscale Inc.")
+            let contributeMenu = new PopupMenu.PopupMenuItem("Contribute")
+            contributeMenu.connect('activate', () => {
+                Util.spawn(['xdg-open', "https://github.com/maltegrosse/tailscale-status#contribute"])
+            })
+            
 
+            // Order Matters!
+            this.menu.addMenuItem(statusSwitchItem);
+            this.menu.addMenuItem(statusItem);
+            this.menu.addMenuItem(authItem);
+            this.menu.addMenuItem(accountIndicator);
+            this.menu.addMenuItem(new PopupMenu.PopupSeparatorMenuItem());
+            this.menu.addMenuItem(nodesMenu);
+            this.menu.addMenuItem(accountButton);
+            this.menu.addMenuItem(accountsMenu);
+            this.menu.addMenuItem(new PopupMenu.PopupSeparatorMenuItem());
+            this.menu.addMenuItem(shieldItem);
+            this.menu.addMenuItem(acceptRoutesItem);
+            this.menu.addMenuItem(allowLanItem);
+            this.menu.addMenuItem(new PopupMenu.PopupSeparatorMenuItem());
+            this.menu.addMenuItem(receiveFilesItem);
+            this.menu.addMenuItem(sendMenu);
+            this.menu.addMenuItem(exitNodeMenu);
+            this.menu.addMenuItem(logoutButton);
+            this.menu.addMenuItem(aboutMenu);
+            aboutMenu.menu.addMenuItem(infoMenu);
+            aboutMenu.menu.addMenuItem(contributeMenu);
+            aboutMenu.menu.addMenuItem(healthMenu);
         }
     }
 );
 
-function init () {
+function init() {
 }
 
-function enable () {
+function enable() {
 
+    SETTINGS = ExtensionUtils.getSettings(
+        'org.gnome.shell.extensions.tailscale-status');
+    cmdTailscaleStatus()
     // Timer that updates Status icon and drop down menu
-    timerId = GLib.timeout_add_seconds(GLib.PRIORITY_DEFAULT, 10, () => {
+    timerId = GLib.timeout_add_seconds(GLib.PRIORITY_DEFAULT, SETTINGS.get_int('refresh-interval'), () => {
         cmdTailscaleStatus();
         return GLib.SOURCE_CONTINUE;
     });
@@ -457,7 +637,7 @@ function enable () {
     Main.panel.addToStatusArea('tailscale', tailscale, 1);
 }
 
-function disable () {
+function disable() {
     tailscale.destroy();
     tailscale = null;
     icon = null;
@@ -472,3 +652,4 @@ function disable () {
 
 
 }
+
