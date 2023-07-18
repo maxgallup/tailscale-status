@@ -44,7 +44,7 @@ class TailscaleNode {
 
 let nodes = [];
 let accounts = [];
-let currentAccount = "";
+let currentAccount = "(click Update Accounts List)";
 
 let nodesMenu;
 let accountButton;
@@ -311,8 +311,8 @@ function cmdTailscaleSwitchList(unprivileged  = true) {
                     accountsMenu.menu.removeAll()
                     accounts.forEach((account) => {
                         if (account.slice(-2) == " *") {
-                            currentAccount = account
                             account = account.slice(0, -2)
+                            currentAccount = account
                         }
                         let accountItem = new PopupMenu.PopupMenuItem(account)
                         accountItem.connect('activate', () => {
@@ -504,7 +504,7 @@ const TailscalePopup = GObject.registerClass(
             })
 
             // ------ UPDATE ACCOUNTS ------
-            accountButton = new PopupMenu.PopupMenuItem("Update Account list");
+            accountButton = new PopupMenu.PopupMenuItem("Update Accounts List");
             accountButton.connect('activate', (item) => {
                 cmdTailscaleSwitchList()
             })
