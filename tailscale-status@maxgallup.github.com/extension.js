@@ -43,8 +43,14 @@ class TailscaleNode {
 }
 
 let nodes = [];
+let accounts = [];
+let currentAccount = "";
 
 let nodesMenu;
+let accountButton;
+let accountsMenu;
+let accountIndicator;
+let logoutButton;
 let exitNodeMenu;
 let sendMenu;
 let statusItem;
@@ -141,6 +147,7 @@ function getUsername(json) {
 }
 function setStatus(json) {
     authItem.label.text = "Logged in: " + getUsername(json);
+    accountIndicator.label.text = "Account: " + currentAccount;
     authItem.sensitive = false;
     health = json.Health
     switch (json.BackendState) {
@@ -197,6 +204,9 @@ function setAllItems(b) {
     nodesMenu.sensitive = b;
     sendMenu.sensitive = b;
     exitNodeMenu.sensitive = b;
+    accountsMenu.sensitive = b;
+    accountButton.sensitive = b;
+    logoutButton.sensitive = b;
 }
 
 
@@ -212,6 +222,8 @@ function refreshNodesMenu() {
         nodesMenu.menu.addMenuItem(item);
     });
 }
+
+
 
 function refreshExitNodesMenu() {
     exitNodeMenu.menu.removeAll();
@@ -281,7 +293,65 @@ function sendFiles(dest) {
 }
 
 
+function cmdTailscaleSwitchList(unprivileged  = true) {
+    args = ["switch", "--list"]
+    let command = (unprivileged ? ["tailscale"] : ["pkexec", "tailscale"]).concat(args);
 
+    try {
+        let proc = Gio.Subprocess.new(
+            command,
+            Gio.SubprocessFlags.STDOUT_PIPE | Gio.SubprocessFlags.STDERR_PIPE
+        );
+        proc.communicate_utf8_async(null, null, (proc, res) => {
+            try {
+                let [, stdout, stderr] = proc.communicate_utf8_finish(res);
+                if (proc.get_successful()) {
+                    accounts = stdout.split("\n")
+                    accounts = accounts.filter((item) => item.length > 0)
+                    accountsMenu.menu.removeAll()
+                    accounts.forEach((account) => {
+                        if (account.slice(-2) == " *") {
+                            currentAccount = account
+                            account = account.slice(0, -2)
+                        }
+                        let accountItem = new PopupMenu.PopupMenuItem(account)
+                        accountItem.connect('activate', () => {
+                            cmdTailscaleSwitch(account)
+                        });
+                        accountsMenu.menu.addMenuItem(accountItem);
+                    });
+                } else {
+                    if (unprivileged) {
+                        myWarn("retrying tailscale switch --list")
+                        cmdTailscaleSwitchList(false)
+                    } else {
+                        myError("cmd 'tailscale switch --list' failed")
+                    }
+                }
+            } catch (e) {
+                myError(e);
+            }
+        });
+    } catch (e) {
+        myError(e);
+    }
+}
+
+function cmdTailscaleSwitch(account) {
+    if (currentAccount == account) {
+        Main.notify("Already logged in with " + account)
+        return
+    } else {
+        Main.notify("Switching to " + account)
+        currentAccount = account
+    }
+
+    cmdTailscale({
+        args: ["switch", account],
+        addLoginServer: false
+    })
+
+}
 
 function cmdTailscaleStatus() {
     try {
@@ -331,7 +401,7 @@ function cmdTailscale({args, unprivileged = true, addLoginServer = true}) {
                         cmdTailscale({
                             args: args[0] == "up" ? args.concat(["--operator=" + GLib.get_user_name(), "--reset"]) : args,
                             unprivileged: false,
-                            addLoginServer: true
+                            addLoginServer: addLoginServer
                         })
                     } else {
                         myWarn("failed @ cmdTailscale");
@@ -402,6 +472,7 @@ const TailscalePopup = GObject.registerClass(
 
             // ------ AUTH ITEM ------
             authItem = new PopupMenu.PopupMenuItem("Logged in", false);
+            
             authItem.connect('activate', () => {
                 cmdTailscaleStatus()
                 if (authUrl.length == 0) {
@@ -414,6 +485,10 @@ const TailscalePopup = GObject.registerClass(
                     }
                 }
             });
+
+
+            // ------ ACCOUNT INDICATOR ------
+            accountIndicator = new PopupMenu.PopupMenuItem("Account: ", { reactive: false});
 
             // ------ MAIN SWITCH ------
             statusSwitchItem = new PopupMenu.PopupSwitchMenuItem("Tailscale", false);
@@ -428,13 +503,21 @@ const TailscalePopup = GObject.registerClass(
                 }
             })
 
-            
+            // ------ UPDATE ACCOUNTS ------
+            accountButton = new PopupMenu.PopupMenuItem("Update Account list");
+            accountButton.connect('activate', (item) => {
+                cmdTailscaleSwitchList()
+            })
+
+            // ------ ACCOUNTS ------
+            accountsMenu = new PopupMenu.PopupSubMenuMenuItem("Accounts");
+
             // ------ NODES ------
             nodesMenu = new PopupMenu.PopupSubMenuMenuItem("Nodes");
             nodes.forEach((node) => {
                 nodesMenu.menu.addMenuItem(new PopupMenu.PopupMenuItem(node.line));
             });
-            
+
             // ------ SHIELD ------
             shieldItem = new PopupMenu.PopupSwitchMenuItem("Block Incoming", false);
             shieldItem.connect('activate', () => {
@@ -444,6 +527,7 @@ const TailscalePopup = GObject.registerClass(
                     cmdTailscale({ args: ["up", "--shields-up=false", "--reset"] });
                 }
             })
+
             
             // ------ ACCEPT ROUTES ------
             acceptRoutesItem = new PopupMenu.PopupSwitchMenuItem("Accept Routes", false);
@@ -482,6 +566,15 @@ const TailscalePopup = GObject.registerClass(
             // ------ EXIT NODES -------
             exitNodeMenu = new PopupMenu.PopupSubMenuMenuItem("Exit Nodes");
             
+            // ------ LOG OUT -------
+            logoutButton = new PopupMenu.PopupMenuItem("Log Out");
+            logoutButton.connect('activate', () => {
+                cmdTailscale({
+                    args: ["logout"],
+                    addLoginServer: false,
+                });
+            })
+            
             // ------ ABOUT MENU------
             let aboutMenu = new PopupMenu.PopupSubMenuMenuItem("About");
             let healthMenu = new PopupMenu.PopupMenuItem("Health")
@@ -504,8 +597,11 @@ const TailscalePopup = GObject.registerClass(
             this.menu.addMenuItem(statusSwitchItem);
             this.menu.addMenuItem(statusItem);
             this.menu.addMenuItem(authItem);
+            this.menu.addMenuItem(accountIndicator);
             this.menu.addMenuItem(new PopupMenu.PopupSeparatorMenuItem());
             this.menu.addMenuItem(nodesMenu);
+            this.menu.addMenuItem(accountButton);
+            this.menu.addMenuItem(accountsMenu);
             this.menu.addMenuItem(new PopupMenu.PopupSeparatorMenuItem());
             this.menu.addMenuItem(shieldItem);
             this.menu.addMenuItem(acceptRoutesItem);
@@ -514,6 +610,7 @@ const TailscalePopup = GObject.registerClass(
             this.menu.addMenuItem(receiveFilesItem);
             this.menu.addMenuItem(sendMenu);
             this.menu.addMenuItem(exitNodeMenu);
+            this.menu.addMenuItem(logoutButton);
             this.menu.addMenuItem(aboutMenu);
             aboutMenu.menu.addMenuItem(infoMenu);
             aboutMenu.menu.addMenuItem(contributeMenu);
