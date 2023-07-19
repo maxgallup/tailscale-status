@@ -1,3 +1,3 @@
 #!/bin/bash
 
-cd tailscale-status@maxgallup.github.com && zip ../tailscale-status@maxgallup.github.com.zip *
+cd tailscale-status@maxgallup.github.com && zip -r ../tailscale-status@maxgallup.github.com.zip *
