@@ -1,7 +1,7 @@
-# Tailscale status gnome-shell-extension
+# Gnome Extension: tailscale-status
 **This extension is in no way affiliated with Tailscale Inc.**
 
-Easily view the status of your tailscale mesh network and toggle the status of your own machine.
+Easily manage your tailnets from a GUI gnome extension.
 Thus, this requires that you have **setup tailscale beforehand**. 
 
 ![menu image](pics/screenshot.png)
@@ -16,6 +16,8 @@ Thus, this requires that you have **setup tailscale beforehand**.
 * *if exit node:* allow direct access to local network
 * Accept or send files with taildrop
 * Connect through an available [exit node](https://tailscale.com/kb/1103/exit-nodes/)
+* Switch accounts
+* Set custom headscale server url via the preferences.
 
 ### Dependencies
 This obviously **requires** [tailscale](https://tailscale.com) to work! 
@@ -26,11 +28,9 @@ Enable the extension in *Extensions* or *Extension Manager*.
 You might have to log in and out for the extension to be loaded.
 
 ### Contribute
-Include a clear description of your suggestions in the form of an issues or [pull requests](https://github.com/maxgallup/tailscale-status/pulls).
-
-
+Feel free to open pull requests or raise issues, but please add a detailed description of exactly what is happening. Additionally please adhere to the [review guidlines](https://gjs.guide/extensions/review-guidelines/review-guidelines.html#basics) as much as possible.
 
 ### TODOs
-- [ ] Test and support older gnome-shell versions (< 42)
-- [ ] find solution to Issue #12, #9
+- [ ] Rewrite extension to utilize tailscale api instead of running `tailscale` commands.
+- [ ] Implement #23
 

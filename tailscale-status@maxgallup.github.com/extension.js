@@ -1,7 +1,7 @@
 const { St, Clutter } = imports.gi;
 const ExtensionUtils = imports.misc.extensionUtils;
-const Extension = imports.misc.extensionUtils.getCurrentExtension()
-const Util = imports.misc.util
+const Extension = imports.misc.extensionUtils.getCurrentExtension();
+const Util = imports.misc.util;
 
 
 const Main = imports.ui.main;
@@ -382,6 +382,7 @@ function cmdTailscaleStatus() {
 }
 
 function cmdTailscale({args, unprivileged = true, addLoginServer = true}) {
+    let original_args = args
     if (addLoginServer) {
         args = args.concat(["--login-server=" + SETTINGS.get_string('login-server')])
     }
@@ -399,7 +400,7 @@ function cmdTailscale({args, unprivileged = true, addLoginServer = true}) {
                 if (!proc.get_successful()) {
                     if (unprivileged) {
                         cmdTailscale({
-                            args: args[0] == "up" ? args.concat(["--operator=" + GLib.get_user_name(), "--reset"]) : args,
+                            args: args[0] == "up" ? original_args.concat(["--operator=" + GLib.get_user_name(), "--reset"]) : original_args,
                             unprivileged: false,
                             addLoginServer: addLoginServer
                         })
@@ -589,7 +590,7 @@ const TailscalePopup = GObject.registerClass(
             let infoMenu = new PopupMenu.PopupMenuItem("This extension is in no way affiliated with Tailscale Inc.")
             let contributeMenu = new PopupMenu.PopupMenuItem("Contribute")
             contributeMenu.connect('activate', () => {
-                Util.spawn(['xdg-open', "https://github.com/maltegrosse/tailscale-status#contribute"])
+                Util.spawn(['xdg-open', "https://github.com/maxgallup/tailscale-status#contribute"])
             })
             
 
@@ -644,6 +645,8 @@ function disable() {
     icon_down = null;
     icon_up = null;
     icon_exit_node = null;
+    SETTINGS = null;
+    accounts = [];
 
     if (timerId) {
         GLib.Source.remove(timerId);
