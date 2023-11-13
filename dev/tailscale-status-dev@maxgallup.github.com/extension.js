@@ -1,30 +1,25 @@
-// const { St, Clutter } = imports.gi;
-
-import Clutter from 'gi://Clutter';
+import * as Main from 'resource:///org/gnome/shell/ui/main.js';
 import St from 'gi://St';
+import Clutter from 'gi://Clutter';
 
-// const ExtensionUtils = imports.misc.extensionUtils;
 import * as ExtensionUtils from 'resource:///org/gnome/shell/misc/extensionUtils.js';
-// const Util = imports.misc.util;
 import * as Util from 'resource:///org/gnome/shell/misc/util.js';
 
-
-// const Main = imports.ui.main;
-import * as Main from 'resource:///org/gnome/shell/ui/main.js';
-
-// const GObject = imports.gi.GObject;
 import GObject from 'gi://GObject';
-// const GLib = imports.gi.GLib;
 import GLib from 'gi://GLib';
-// const Gio = imports.gi.Gio;
 import Gio from 'gi://Gio';
 
-// const PanelMenu = imports.ui.panelMenu;
 import * as PanelMenu from 'resource:///org/gnome/shell/ui/panelMenu.js';
-// const PopupMenu = imports.ui.popupMenu;
 import * as PopupMenu from 'resource:///org/gnome/shell/ui/popupMenu.js';
 
-const Me = ExtensionUtils.getCurrentExtension();
+import * as CustomUtils from './customUtils.js'
+
+import { Extension, gettext as _ } from "resource:///org/gnome/shell/extensions/extension.js";
+let extensionObject;
+
+
+
+
 
 const statusString = "Status: ";
 const enabledString = "🟢";
@@ -82,7 +77,7 @@ let icon;
 let icon_down;
 let icon_up;
 let icon_exit_node;
-let SETTINGS;
+// let SETTINGS;
 
 let timerId = null;
 
@@ -306,7 +301,7 @@ function sendFiles(dest) {
 
 
 function cmdTailscaleSwitchList(unprivileged  = true) {
-    args = ["switch", "--list"]
+    let args = ["switch", "--list"]
     let command = (unprivileged ? ["tailscale"] : ["pkexec", "tailscale"]).concat(args);
 
     try {
@@ -395,7 +390,8 @@ function cmdTailscaleStatus() {
 
 function cmdTailscale({args, unprivileged = true, addLoginServer = true}) {
     let original_args = args
-    if (addLoginServer) {
+    // if (addLoginServer) {
+    if (false) {
         args = args.concat(["--login-server=" + SETTINGS.get_string('login-server')])
     }
 
@@ -461,10 +457,11 @@ const TailscalePopup = GObject.registerClass(
         _init() {
             super._init(0);
 
+            extensionObject = Extension.lookupByURL(import.meta.url);
 
-            icon_down = Gio.icon_new_for_string(Me.dir.get_path() + '/icon-down.svg');
-            icon_up = Gio.icon_new_for_string(Me.dir.get_path() + '/icon-up.svg');
-            icon_exit_node = Gio.icon_new_for_string(Me.dir.get_path() + '/icon-exit-node.svg');
+            icon_down = Gio.icon_new_for_string(extensionObject.dir.get_path() + '/icon-down.svg');
+            icon_up = Gio.icon_new_for_string(extensionObject.dir.get_path() + '/icon-up.svg');
+            icon_exit_node = Gio.icon_new_for_string(extensionObject.dir.get_path() + '/icon-exit-node.svg');
 
             icon = new St.Icon({
                 gicon: icon_down,
@@ -632,39 +629,49 @@ const TailscalePopup = GObject.registerClass(
     }
 );
 
-function init() {
-}
 
-function enable() {
 
-    SETTINGS = ExtensionUtils.getSettings(
-        'org.gnome.shell.extensions.tailscale-status');
-    cmdTailscaleStatus()
-    // Timer that updates Status icon and drop down menu
-    timerId = GLib.timeout_add_seconds(GLib.PRIORITY_DEFAULT, SETTINGS.get_int('refresh-interval'), () => {
-        cmdTailscaleStatus();
-        return GLib.SOURCE_CONTINUE;
-    });
 
-    tailscale = new TailscalePopup();
-    Main.panel.addToStatusArea('tailscale', tailscale, 1);
-}
 
-function disable() {
-    tailscale.destroy();
-    tailscale = null;
-    icon = null;
-    icon_down = null;
-    icon_up = null;
-    icon_exit_node = null;
-    SETTINGS = null;
-    accounts = [];
 
-    if (timerId) {
-        GLib.Source.remove(timerId);
-        timerId = null;
+
+let tailscale;
+
+
+export default class TailscaleStatusExtension extends Extension {
+    enable() {
+        CustomUtils.myWarn("enabled");
+
+        // SETTINGS = ExtensionUtils.getSettings('org.gnome.shell.extensions.tailscale-status');
+        cmdTailscaleStatus()
+        
+        // Timer that updates Status icon and drop down menu
+        // timerId = GLib.timeout_add_seconds(GLib.PRIORITY_DEFAULT, SETTINGS.get_int('refresh-interval'), () => {
+            // cmdTailscaleStatus();
+            // return GLib.SOURCE_CONTINUE;
+        // });
+    
+        tailscale = new TailscalePopup();
+        Main.panel.addToStatusArea('tailscale', tailscale, 1);
     }
+    
+    disable() {
+        CustomUtils.myWarn("disabled");
 
-
+        tailscale.destroy();
+        tailscale = null;
+        icon = null;
+        icon_down = null;
+        icon_up = null;
+        icon_exit_node = null;
+        // SETTINGS = null;
+        accounts = [];
+    
+        if (timerId) {
+            GLib.Source.remove(timerId);
+            timerId = null;
+        }
+    }
 }
+
 
