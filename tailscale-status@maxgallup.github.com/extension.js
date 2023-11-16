@@ -1,18 +1,16 @@
-const { St, Clutter } = imports.gi;
-const ExtensionUtils = imports.misc.extensionUtils;
-const Extension = imports.misc.extensionUtils.getCurrentExtension();
-const Util = imports.misc.util;
+import St from 'gi://St';
+import Clutter from 'gi://Clutter';
+import { Extension } from 'resource:///org/gnome/shell/extensions/extension.js';
+import * as ExtensionUtils from 'resource:///org/gnome/shell/misc/extensionUtils.js';
+import * as Util from 'resource:///org/gnome/shell/misc/util.js';
 
+import * as Main from 'resource:///org/gnome/shell/ui/main.js';
+import GObject from 'gi://GObject';
+import GLib from 'gi://GLib';
+import Gio from 'gi://Gio';
 
-const Main = imports.ui.main;
-const GObject = imports.gi.GObject;
-const GLib = imports.gi.GLib;
-const Gio = imports.gi.Gio;
-
-const PanelMenu = imports.ui.panelMenu;
-const PopupMenu = imports.ui.popupMenu;
-
-const Me = imports.misc.extensionUtils.getCurrentExtension();
+import * as PanelMenu from 'resource:///org/gnome/shell/ui/panelMenu.js';
+import * as PopupMenu from 'resource:///org/gnome/shell/ui/popupMenu.js';
 
 const statusString = "Status: ";
 const enabledString = "🟢";
@@ -70,7 +68,7 @@ let icon;
 let icon_down;
 let icon_up;
 let icon_exit_node;
-let SETTINGS;
+let _settings;
 
 let timerId = null;
 
@@ -185,7 +183,7 @@ function setStatus(json) {
             authItem.sensitive = true;
             statusItem.label.text = statusString + "needs login";
             authItem.label.text = "Click to Login"
-            
+
             setAllItems(false);
             nodes = [];
             break;
@@ -294,7 +292,7 @@ function sendFiles(dest) {
 
 
 function cmdTailscaleSwitchList(unprivileged  = true) {
-    args = ["switch", "--list"]
+    let args = ["switch", "--list"]
     let command = (unprivileged ? ["tailscale"] : ["pkexec", "tailscale"]).concat(args);
 
     try {
@@ -384,7 +382,7 @@ function cmdTailscaleStatus() {
 function cmdTailscale({args, unprivileged = true, addLoginServer = true}) {
     let original_args = args
     if (addLoginServer) {
-        args = args.concat(["--login-server=" + SETTINGS.get_string('login-server')])
+        args = args.concat(["--login-server=" + _settings.get_string('login-server')])
     }
 
     let command = (unprivileged ? ["tailscale"] : ["pkexec", "tailscale"]).concat(args);
@@ -445,14 +443,13 @@ function cmdTailscaleRecFiles() {
 
 const TailscalePopup = GObject.registerClass(
     class TailscalePopup extends PanelMenu.Button {
-
-        _init() {
+        _init(_dir) {
             super._init(0);
 
 
-            icon_down = Gio.icon_new_for_string(Me.dir.get_path() + '/icon-down.svg');
-            icon_up = Gio.icon_new_for_string(Me.dir.get_path() + '/icon-up.svg');
-            icon_exit_node = Gio.icon_new_for_string(Me.dir.get_path() + '/icon-exit-node.svg');
+            icon_down = Gio.icon_new_for_string(_dir.get_path() + '/icon-down.svg');
+            icon_up = Gio.icon_new_for_string(_dir.get_path() + '/icon-up.svg');
+            icon_exit_node = Gio.icon_new_for_string(_dir.get_path() + '/icon-exit-node.svg');
 
             icon = new St.Icon({
                 gicon: icon_down,
@@ -467,13 +464,13 @@ const TailscalePopup = GObject.registerClass(
                 }
             });
 
-            
+
             // ------ MAIN STATUS ITEM ------
             statusItem = new PopupMenu.PopupMenuItem(statusString, { reactive: false });
 
             // ------ AUTH ITEM ------
             authItem = new PopupMenu.PopupMenuItem("Logged in", false);
-            
+
             authItem.connect('activate', () => {
                 cmdTailscaleStatus()
                 if (authUrl.length == 0) {
@@ -529,7 +526,7 @@ const TailscalePopup = GObject.registerClass(
                 }
             })
 
-            
+
             // ------ ACCEPT ROUTES ------
             acceptRoutesItem = new PopupMenu.PopupSwitchMenuItem("Accept Routes", false);
             acceptRoutesItem.connect('activate', () => {
@@ -539,7 +536,7 @@ const TailscalePopup = GObject.registerClass(
                     cmdTailscale({ args: ["up", "--accept-routes=false", "--reset"] });
                 }
             })
-            
+
             // ------ ALLOW DIRECT LAN ACCESS ------
             allowLanItem = new PopupMenu.PopupSwitchMenuItem("Allow Direct Lan Access", false);
             allowLanItem.connect('activate', () => {
@@ -560,13 +557,13 @@ const TailscalePopup = GObject.registerClass(
             receiveFilesItem.connect('activate', () => {
                 cmdTailscaleRecFiles();
             })
-            
+
             // ------ SEND FILES MENU ------
             sendMenu = new PopupMenu.PopupSubMenuMenuItem("Send Files");
-            
+
             // ------ EXIT NODES -------
             exitNodeMenu = new PopupMenu.PopupSubMenuMenuItem("Exit Nodes");
-            
+
             // ------ LOG OUT -------
             logoutButton = new PopupMenu.PopupMenuItem("Log Out");
             logoutButton.connect('activate', () => {
@@ -575,14 +572,14 @@ const TailscalePopup = GObject.registerClass(
                     addLoginServer: false,
                 });
             })
-            
+
             // ------ ABOUT MENU------
             let aboutMenu = new PopupMenu.PopupSubMenuMenuItem("About");
             let healthMenu = new PopupMenu.PopupMenuItem("Health")
             healthMenu.connect('activate', () => {
                 if (health != null) {
                     Main.notify(health.join());
-                    
+
                 } else {
                     Main.notify("null");
                 }
@@ -592,7 +589,7 @@ const TailscalePopup = GObject.registerClass(
             contributeMenu.connect('activate', () => {
                 Util.spawn(['xdg-open', "https://github.com/maxgallup/tailscale-status#contribute"])
             })
-            
+
 
             // Order Matters!
             this.menu.addMenuItem(statusSwitchItem);
@@ -623,36 +620,36 @@ const TailscalePopup = GObject.registerClass(
 function init() {
 }
 
-function enable() {
-
-    SETTINGS = ExtensionUtils.getSettings(
-        'org.gnome.shell.extensions.tailscale-status');
-    cmdTailscaleStatus()
-    // Timer that updates Status icon and drop down menu
-    timerId = GLib.timeout_add_seconds(GLib.PRIORITY_DEFAULT, SETTINGS.get_int('refresh-interval'), () => {
+export default class TailscaleStatusExtension extends Extension {
+    enable() {
+        this._settings = this.getSettings(
+            'org.gnome.shell.extensions.tailscale-status');
         cmdTailscaleStatus();
-        return GLib.SOURCE_CONTINUE;
-    });
+        // Timer that updates Status icon and drop down menu
+        timerId = GLib.timeout_add_seconds(GLib.PRIORITY_DEFAULT, this._settings.get_int('refresh-interval'), () => {
+            cmdTailscaleStatus();
+            return GLib.SOURCE_CONTINUE;
+        });
 
-    tailscale = new TailscalePopup();
-    Main.panel.addToStatusArea('tailscale', tailscale, 1);
-}
-
-function disable() {
-    tailscale.destroy();
-    tailscale = null;
-    icon = null;
-    icon_down = null;
-    icon_up = null;
-    icon_exit_node = null;
-    SETTINGS = null;
-    accounts = [];
-
-    if (timerId) {
-        GLib.Source.remove(timerId);
-        timerId = null;
+        let _dir = this.metadata.dir;
+        this.tailscale = new TailscalePopup(_dir);
+        Main.panel.addToStatusArea('tailscale', this.tailscale, 1);
     }
 
+    disable() {
+        this.tailscale.destroy();
+        this.tailscale = null;
+        icon = null;
+        icon_down = null;
+        icon_up = null;
+        icon_exit_node = null;
+        this._settings = null;
+        accounts = [];
+
+        if (timerId) {
+            GLib.Source.remove(timerId);
+            timerId = null;
+        }
+    }
 
 }
-
