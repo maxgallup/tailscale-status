@@ -12,10 +12,7 @@ import Gio from 'gi://Gio';
 import * as PanelMenu from 'resource:///org/gnome/shell/ui/panelMenu.js';
 import * as PopupMenu from 'resource:///org/gnome/shell/ui/popupMenu.js';
 
-import * as CustomUtils from './customUtils.js'
-
 import { Extension, gettext as _ } from "resource:///org/gnome/shell/extensions/extension.js";
-let extensionObject;
 
 
 const statusString = "Status: ";
@@ -80,11 +77,11 @@ let timerId = null;
 
 
 function myWarn(string) {
-    log("🟡 [tailscale-status]: " + string);
+    console.log("🟡 [tailscale-status]: " + string);
 }
 
 function myError(string) {
-    log("🔴 [tailscale-status]: " + string);
+    console.log("🔴 [tailscale-status]: " + string);
 }
 
 
@@ -451,12 +448,12 @@ function cmdTailscaleRecFiles() {
 const TailscalePopup = GObject.registerClass(
     class TailscalePopup extends PanelMenu.Button {
 
-        _init() {
+        _init(dir_path) {
             super._init(0);
 
-            icon_down = Gio.icon_new_for_string(extensionObject.dir.get_path() + '/icon-down.svg');
-            icon_up = Gio.icon_new_for_string(extensionObject.dir.get_path() + '/icon-up.svg');
-            icon_exit_node = Gio.icon_new_for_string(extensionObject.dir.get_path() + '/icon-exit-node.svg');
+            icon_down = Gio.icon_new_for_string(dir_path + '/icon-down.svg');
+            icon_up = Gio.icon_new_for_string(dir_path + '/icon-up.svg');
+            icon_exit_node = Gio.icon_new_for_string(dir_path + '/icon-exit-node.svg');
 
             icon = new St.Icon({
                 gicon: icon_down,
@@ -631,8 +628,7 @@ let tailscale;
 
 export default class TailscaleStatusExtension extends Extension {
     enable() {
-        extensionObject = Extension.lookupByURL(import.meta.url);
-        SETTINGS = extensionObject.getSettings('org.gnome.shell.extensions.tailscale-status');
+        SETTINGS = this.getSettings('org.gnome.shell.extensions.tailscale-status');
 
         cmdTailscaleStatus()
 
@@ -642,12 +638,11 @@ export default class TailscaleStatusExtension extends Extension {
             return GLib.SOURCE_CONTINUE;
         });
 
-        tailscale = new TailscalePopup();
+        tailscale = new TailscalePopup(this.dir.get_path());
         Main.panel.addToStatusArea('tailscale', tailscale, 1);
     }
     
     disable() {
-        CustomUtils.myWarn("disabled");
 
         tailscale.destroy();
         tailscale = null;
