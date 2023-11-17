@@ -6,10 +6,8 @@ import {ExtensionPreferences, gettext as _} from 'resource:///org/gnome/Shell/Ex
 
 export default class TailscaleStatusExtensionPreferences extends ExtensionPreferences {
     fillPreferencesWindow(window) {
-        
-        log(" >>> in settings");
 
-        window._settings = this.getSettings();
+       
         let settings = this.getSettings();
  
         const page = new Adw.PreferencesPage();
