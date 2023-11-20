@@ -648,7 +648,7 @@ export default class TailscaleStatusExtension extends Extension {
         tailscale = null;
         SETTINGS = null;
         accounts = [];
-        nodes = null;
+        nodes = [];
         currentAccount = null;
         nodesMenu = null;
         accountButton = null;
@@ -659,7 +659,7 @@ export default class TailscaleStatusExtension extends Extension {
         sendMenu = null;
         statusItem = null;
         authItem = null;
-        needToAuth = null;
+        needToAuth = true;
         authUrl = null;
 
         health = null;
