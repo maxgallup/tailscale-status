@@ -638,7 +638,7 @@ export default class TailscaleStatusExtension extends Extension {
             return GLib.SOURCE_CONTINUE;
         });
 
-        tailscale = new TailscalePopup(this.dir.get_path());
+        tailscale = new TailscalePopup(this.path);
         Main.panel.addToStatusArea('tailscale', tailscale, 1);
     }
     
@@ -646,13 +646,35 @@ export default class TailscaleStatusExtension extends Extension {
 
         tailscale.destroy();
         tailscale = null;
+        SETTINGS = null;
+        accounts = [];
+        nodes = null;
+        currentAccount = null;
+        nodesMenu = null;
+        accountButton = null;
+        accountsMenu = null;
+        accountIndicator = null;
+        logoutButton = null;
+        exitNodeMenu = null;
+        sendMenu = null;
+        statusItem = null;
+        authItem = null;
+        needToAuth = null;
+        authUrl = null;
+
+        health = null;
+
+        receiveFilesItem = null;
+        shieldItem = null;
+        acceptRoutesItem = null;
+        allowLanItem = null;
+        statusSwitchItem = null;
+        downloads_path = null;
         icon = null;
         icon_down = null;
         icon_up = null;
         icon_exit_node = null;
-        SETTINGS = null;
-        accounts = [];
-    
+
         if (timerId) {
             GLib.Source.remove(timerId);
             timerId = null;
