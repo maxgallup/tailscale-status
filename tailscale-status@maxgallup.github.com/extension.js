@@ -131,6 +131,18 @@ function sortNodes(a, b) {
         return 0;
     }
 }
+
+function sortByName(a, b) {
+    if (a.name[0] > b.name[0]) {
+        return 1;
+    } else if (a.name[0] == b.name[0]) {
+        return 0;
+    } else {
+        return -1;
+    }
+}
+
+
 function getUsername(json) {
     let id = 0
     if (json.Self.UserID != null) {
@@ -228,6 +240,7 @@ function refreshNodesMenu() {
 function refreshExitNodesMenu() {
     exitNodeMenu.menu.removeAll();
     var uses_exit = false;
+    nodes.sort(sortByName);
     nodes.forEach((node) => {
         if (node.offersExit) {
             var item = new PopupMenu.PopupMenuItem(node.name)
