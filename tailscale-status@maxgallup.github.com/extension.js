@@ -72,8 +72,6 @@ let icon_up;
 let icon_exit_node;
 let SETTINGS;
 
-let timerId = null;
-
 
 function myWarn(string) {
     log("🟡 [tailscale-status]: " + string);
@@ -558,10 +556,10 @@ const TailscalePopup = GObject.registerClass(
             allowLanItem.connect('activate', () => {
                 if (allowLanItem.state) {
                     if (nodes[0].usesExit) {
+                        allowLanItem.setToggleState(false);
                         cmdTailscale({ args: ["up", "--exit-node-allow-lan-access"] });
                     } else {
                         Main.notify("Must setup exit node first");
-                        allowLanItem.setToggleState(false);
                     }
                 } else {
                     cmdTailscale({ args: ["up", "--exit-node-allow-lan-access=false", "--reset"] });
@@ -641,11 +639,6 @@ function enable() {
     SETTINGS = ExtensionUtils.getSettings(
         'org.gnome.shell.extensions.tailscale-status');
     cmdTailscaleStatus()
-    // Timer that updates Status icon and drop down menu
-    timerId = GLib.timeout_add_seconds(GLib.PRIORITY_DEFAULT, SETTINGS.get_int('refresh-interval'), () => {
-        cmdTailscaleStatus();
-        return GLib.SOURCE_CONTINUE;
-    });
 
     tailscale = new TailscalePopup();
     Main.panel.addToStatusArea('tailscale', tailscale, 1);
@@ -660,12 +653,5 @@ function disable() {
     icon_exit_node = null;
     SETTINGS = null;
     accounts = [];
-
-    if (timerId) {
-        GLib.Source.remove(timerId);
-        timerId = null;
-    }
-
-
 }
 
