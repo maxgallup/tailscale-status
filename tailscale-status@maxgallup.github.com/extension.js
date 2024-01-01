@@ -556,10 +556,10 @@ const TailscalePopup = GObject.registerClass(
             allowLanItem.connect('activate', () => {
                 if (allowLanItem.state) {
                     if (nodes[0].usesExit) {
-                        allowLanItem.setToggleState(false);
                         cmdTailscale({ args: ["up", "--exit-node-allow-lan-access"] });
                     } else {
                         Main.notify("Must setup exit node first");
+                        allowLanItem.setToggleState(false);
                     }
                 } else {
                     cmdTailscale({ args: ["up", "--exit-node-allow-lan-access=false", "--reset"] });
