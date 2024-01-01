@@ -73,8 +73,6 @@ let icon_up;
 let icon_exit_node;
 let SETTINGS;
 
-let timerId = null;
-
 
 function myWarn(string) {
     console.log("🟡 [tailscale-status]: " + string);
@@ -644,12 +642,6 @@ export default class TailscaleStatusExtension extends Extension {
 
         cmdTailscaleStatus()
 
-        // Timer that updates Status icon and drop down menu
-        timerId = GLib.timeout_add_seconds(GLib.PRIORITY_DEFAULT, SETTINGS.get_int('refresh-interval'), () => {
-            cmdTailscaleStatus();
-            return GLib.SOURCE_CONTINUE;
-        });
-
         tailscale = new TailscalePopup(this.path);
         Main.panel.addToStatusArea('tailscale', tailscale, 1);
     }
@@ -687,10 +679,6 @@ export default class TailscaleStatusExtension extends Extension {
         icon_up = null;
         icon_exit_node = null;
 
-        if (timerId) {
-            GLib.Source.remove(timerId);
-            timerId = null;
-        }
     }
 }
 
