@@ -5,7 +5,8 @@
   "settings-schema": "org.gnome.shell.extensions.tailscale-status",
   "shell-version": [
     "45",
-    "46"
+    "46",
+    "47"
   ],
   "url": "https://github.com/maxgallup/tailscale-status",
   "uuid": "tailscale-status@maxgallup.github.com",
