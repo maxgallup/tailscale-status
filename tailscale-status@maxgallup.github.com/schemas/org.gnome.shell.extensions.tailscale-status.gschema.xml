@@ -1,15 +1,11 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <schemalist gettext-domain="gnome-shell-extensions">
   <schema id="org.gnome.shell.extensions.tailscale-status" path="/org/gnome/shell/extensions/tailscale-status/">
-    <key name="refresh-interval" type="i">
-      <default>10</default>
-      <summary>Refresh Interval</summary>
-      <description>Refresh interval in seconds</description>
-    </key>
     <key name="login-server" type="s">
         <default>"https://controlplane.tailscale.com"</default>
         <summary>Login-Server Url</summary>
-        <description>If you are using Headscale for your control server, use your Headscale instance’s URL.</description>
-      </key>
+        <description>If you are using Headscale for your control server, use your Headscale instance's URL.</description>
+    </key>
+    
   </schema>
 </schemalist>

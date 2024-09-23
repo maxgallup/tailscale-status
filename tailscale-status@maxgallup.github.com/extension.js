@@ -1,18 +1,19 @@
-const { St, Clutter } = imports.gi;
-const ExtensionUtils = imports.misc.extensionUtils;
-const Extension = imports.misc.extensionUtils.getCurrentExtension();
-const Util = imports.misc.util;
+import * as Main from 'resource:///org/gnome/shell/ui/main.js';
+import St from 'gi://St';
+import Clutter from 'gi://Clutter';
 
+import * as ExtensionUtils from 'resource:///org/gnome/shell/misc/extensionUtils.js';
+import * as Util from 'resource:///org/gnome/shell/misc/util.js';
 
-const Main = imports.ui.main;
-const GObject = imports.gi.GObject;
-const GLib = imports.gi.GLib;
-const Gio = imports.gi.Gio;
+import GObject from 'gi://GObject';
+import GLib from 'gi://GLib';
+import Gio from 'gi://Gio';
 
-const PanelMenu = imports.ui.panelMenu;
-const PopupMenu = imports.ui.popupMenu;
+import * as PanelMenu from 'resource:///org/gnome/shell/ui/panelMenu.js';
+import * as PopupMenu from 'resource:///org/gnome/shell/ui/popupMenu.js';
 
-const Me = imports.misc.extensionUtils.getCurrentExtension();
+import { Extension, gettext as _ } from "resource:///org/gnome/shell/extensions/extension.js";
+
 
 const statusString = "Status: ";
 const enabledString = "🟢";
@@ -72,15 +73,13 @@ let icon_up;
 let icon_exit_node;
 let SETTINGS;
 
-let timerId = null;
-
 
 function myWarn(string) {
-    log("🟡 [tailscale-status]: " + string);
+    console.log("🟡 [tailscale-status]: " + string);
 }
 
 function myError(string) {
-    log("🔴 [tailscale-status]: " + string);
+    console.log("🔴 [tailscale-status]: " + string);
 }
 
 
@@ -131,6 +130,17 @@ function sortNodes(a, b) {
         return 0;
     }
 }
+
+function sortByName(a, b) {
+    if (a.name > b.name) {
+        return 1;
+    } else if (a.name == b.name) {
+        return 0;
+    } else {
+        return -1;
+    }
+}
+
 function getUsername(json) {
     let id = 0
     if (json.Self.UserID != null) {
@@ -228,6 +238,7 @@ function refreshNodesMenu() {
 function refreshExitNodesMenu() {
     exitNodeMenu.menu.removeAll();
     var uses_exit = false;
+    nodes.sort(sortByName);
     nodes.forEach((node) => {
         if (node.offersExit) {
             var item = new PopupMenu.PopupMenuItem(node.name)
@@ -294,7 +305,7 @@ function sendFiles(dest) {
 
 
 function cmdTailscaleSwitchList(unprivileged  = true) {
-    args = ["switch", "--list"]
+    let args = ["switch", "--list"]
     let command = (unprivileged ? ["tailscale"] : ["pkexec", "tailscale"]).concat(args);
 
     try {
@@ -383,6 +394,7 @@ function cmdTailscaleStatus() {
 
 function cmdTailscale({args, unprivileged = true, addLoginServer = true}) {
     let original_args = args
+
     if (addLoginServer) {
         args = args.concat(["--login-server=" + SETTINGS.get_string('login-server')])
     }
@@ -446,13 +458,12 @@ function cmdTailscaleRecFiles() {
 const TailscalePopup = GObject.registerClass(
     class TailscalePopup extends PanelMenu.Button {
 
-        _init() {
+        _init(dir_path) {
             super._init(0);
 
-
-            icon_down = Gio.icon_new_for_string(Me.dir.get_path() + '/icon-down.svg');
-            icon_up = Gio.icon_new_for_string(Me.dir.get_path() + '/icon-up.svg');
-            icon_exit_node = Gio.icon_new_for_string(Me.dir.get_path() + '/icon-exit-node.svg');
+            icon_down = Gio.icon_new_for_string(dir_path + '/icon-down.svg');
+            icon_up = Gio.icon_new_for_string(dir_path + '/icon-up.svg');
+            icon_exit_node = Gio.icon_new_for_string(dir_path + '/icon-exit-node.svg');
 
             icon = new St.Icon({
                 gicon: icon_down,
@@ -620,39 +631,55 @@ const TailscalePopup = GObject.registerClass(
     }
 );
 
-function init() {
-}
 
-function enable() {
 
-    SETTINGS = ExtensionUtils.getSettings(
-        'org.gnome.shell.extensions.tailscale-status');
-    cmdTailscaleStatus()
-    // Timer that updates Status icon and drop down menu
-    timerId = GLib.timeout_add_seconds(GLib.PRIORITY_DEFAULT, SETTINGS.get_int('refresh-interval'), () => {
-        cmdTailscaleStatus();
-        return GLib.SOURCE_CONTINUE;
-    });
+let tailscale;
 
-    tailscale = new TailscalePopup();
-    Main.panel.addToStatusArea('tailscale', tailscale, 1);
-}
 
-function disable() {
-    tailscale.destroy();
-    tailscale = null;
-    icon = null;
-    icon_down = null;
-    icon_up = null;
-    icon_exit_node = null;
-    SETTINGS = null;
-    accounts = [];
+export default class TailscaleStatusExtension extends Extension {
+    enable() {
+        SETTINGS = this.getSettings('org.gnome.shell.extensions.tailscale-status');
 
-    if (timerId) {
-        GLib.Source.remove(timerId);
-        timerId = null;
+        cmdTailscaleStatus()
+
+        tailscale = new TailscalePopup(this.path);
+        Main.panel.addToStatusArea('tailscale', tailscale, 1);
     }
+    
+    disable() {
 
+        tailscale.destroy();
+        tailscale = null;
+        SETTINGS = null;
+        accounts = [];
+        nodes = [];
+        currentAccount = null;
+        nodesMenu = null;
+        accountButton = null;
+        accountsMenu = null;
+        accountIndicator = null;
+        logoutButton = null;
+        exitNodeMenu = null;
+        sendMenu = null;
+        statusItem = null;
+        authItem = null;
+        needToAuth = true;
+        authUrl = null;
 
+        health = null;
+
+        receiveFilesItem = null;
+        shieldItem = null;
+        acceptRoutesItem = null;
+        allowLanItem = null;
+        statusSwitchItem = null;
+        downloads_path = null;
+        icon = null;
+        icon_down = null;
+        icon_up = null;
+        icon_exit_node = null;
+
+    }
 }
+
 
