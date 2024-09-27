@@ -1,40 +1,20 @@
- 
-# Local API 
+## Under the hood
+The intended way of writing a tailscale client is to query the `tailscaled`. This allows clients to process structured json data straight from the tailscale daemon. We can query the daemon over the default socket `/var/run/tailscale/tailscaled.sock` and if we use the `/localapi/v0/...` prefix we can query one of many [available api endpoints](https://github.com/tailscale/tailscale/blob/main/ipn/localapi/localapi.go#L76). The following curl request will return the same as `tailscale status` but in structured json and we can now craft HTTP requests to provide the underlying functionality of the client.
 
-`curl --unix-socket /run/tailscale/tailscaled.sock http://localhost/`
-* "/localapi/v0/whois"
-* "/localapi/v0/goroutines"  
-* "/localapi/v0/profile"
-* "/localapi/v0/status"
-* "/localapi/v0/logout"
-* "/localapi/v0/login-interactive"  
-* "/localapi/v0/prefs"  
-* "/localapi/v0/ping"  
-* "/localapi/v0/check-prefs"  
-* "/localapi/v0/check-ip-forwarding"  
-* "/localapi/v0/bugreport"  
-* "/localapi/v0/file-targets"  
-* "/localapi/v0/set-dns"  
-* "/localapi/v0/derpmap"  
-* "/localapi/v0/metrics"  
-* "/localapi/v0/debug"  
-* "/localapi/v0/set-expiry-sooner"  
-* "/localapi/v0/dial"  
-* "/localapi/v0/id-token"  
-
-# commands
-``` bash
-#!/bin/bash
-
-DATA=$(curl --silent --unix-socket /run/tailscale/tailscaled.sock http://localhost/localapi/v0/status)
-
-BACKENDSTATE=$(echo "$DATA" | jq -r .BackendState)
-
-echo $BACKENDSTATE
-
-
+``` sh
+curl -H "Content-Type: application/json" -X GET --unix-socket /var/run/tailscale/tailscaled.sock http://local-tailscaled.sock/localapi/v0/status
 ```
 
+Furthermore, in order to recreate the right http requests we can inspect the bytes going through the tailscale socket with `socat`:
+``` sh
 
-# password-less command
+mv /var/run/tailscale/tailscaled.sock /var/run/tailscale/tailscaled.sock.original
+socat -t100 -x -v UNIX-LISTEN:/var/run/tailscale/tailscaled.sock,mode=777,reuseaddr,fork UNIX-CONNECT:/var/run/tailscale/tailscaled.sock.original
+```
+
+Then, using the tailscale cli we can correctly craft the right HTTP requests programmatically.
+
+
+
+## password-less command
 `tailscale up --operator=$USER || pkexec tailscale up --operator=$USER`

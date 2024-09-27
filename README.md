@@ -23,6 +23,9 @@ Thus, this requires that you have **setup tailscale beforehand**.
 This obviously **requires** [tailscale](https://tailscale.com) to work! 
 
 ### Installation
+Official download from gnome-extensions: [https://extensions.gnome.org/extension/5112/tailscale-status/](https://extensions.gnome.org/extension/5112/tailscale-status/).
+
+### Development
 Download the `tailscale-status@maxgallup.github.com` directory and move it to `~/.local/share/gnome-shell/extensions/`.
 Enable the extension in *Extensions* or *Extension Manager*.
 You might have to log in and out for the extension to be loaded.
@@ -30,7 +33,5 @@ You might have to log in and out for the extension to be loaded.
 ### Contribute
 Feel free to open pull requests or raise issues, but please add a detailed description of exactly what is happening. Additionally please adhere to the [review guidlines](https://gjs.guide/extensions/review-guidelines/review-guidelines.html#basics) as much as possible.
 
-### TODOs
-- [ ] Rewrite extension to utilize tailscale api instead of running `tailscale` commands.
-- [ ] Implement #23
+
 
