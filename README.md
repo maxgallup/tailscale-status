@@ -7,7 +7,7 @@ Thus, this requires that you have **setup tailscale beforehand**.
 ![menu image](pics/screenshot.png)
 
 ### Compatibility: pre-gnome45
-* Due to breaking changes addded in Gnome45, two versions of this extension will have to be supported: pre-gnome45 and post-gnome45. **This branch is pre-gnome45.**
+* Due to breaking changes addded in Gnome45, two versions of this extension will have to be supported: [pre-gnome45](https://github.com/maxgallup/tailscale-status/tree/pre-gnome45) and [post-gnome45](https://github.com/maxgallup/tailscale-status/tree/post-gnome45). **This branch is pre-gnome45.**
 
 ### Features
 * Copy address of any node by clicking it in the menu
