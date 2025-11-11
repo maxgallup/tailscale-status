@@ -1,19 +1,19 @@
-import * as Main from 'resource:///org/gnome/shell/ui/main.js';
-import St from 'gi://St';
-import Clutter from 'gi://Clutter';
+const { St, Clutter } = imports.gi;
+const ExtensionUtils = imports.misc.extensionUtils;
+const Extension = imports.misc.extensionUtils.getCurrentExtension();
+const Util = imports.misc.util;
 
-import * as ExtensionUtils from 'resource:///org/gnome/shell/misc/extensionUtils.js';
-import * as Util from 'resource:///org/gnome/shell/misc/util.js';
 
-import GObject from 'gi://GObject';
-import GLib from 'gi://GLib';
-import Gio from 'gi://Gio';
+const Main = imports.ui.main;
+const GObject = imports.gi.GObject;
+const GLib = imports.gi.GLib;
+const Gio = imports.gi.Gio;
 
-import * as PanelMenu from 'resource:///org/gnome/shell/ui/panelMenu.js';
-import * as PopupMenu from 'resource:///org/gnome/shell/ui/popupMenu.js';
 
-import { Extension, gettext as _ } from "resource:///org/gnome/shell/extensions/extension.js";
+const PanelMenu = imports.ui.panelMenu;
+const PopupMenu = imports.ui.popupMenu;
 
+const Me = imports.misc.extensionUtils.getCurrentExtension();
 
 const statusString = "Status: ";
 const enabledString = "🟢";
@@ -87,11 +87,11 @@ let SETTINGS;
 
 
 function myWarn(string) {
-    console.log("🟡 [tailscale-status]: " + string);
+    log("🟡 [tailscale-status]: " + string);
 }
 
 function myError(string) {
-    console.log("🔴 [tailscale-status]: " + string);
+    log("🔴 [tailscale-status]: " + string);
 }
 
 
@@ -198,6 +198,7 @@ function combineSort(...sorters) {
         }
     }
 }
+
 function getUsername(json) {
     let id = 0
     if (json.Self.UserID != null) {
@@ -427,9 +428,36 @@ function sendFiles(dest) {
     }
 }
 
+function cmdTailscaleFile(files, dest) {
+    for (const file of files) {
+        try {
+            let proc = Gio.Subprocess.new(
+                ["tailscale", "file", "cp", file, dest + ":"],
+                Gio.SubprocessFlags.STDOUT_PIPE | Gio.SubprocessFlags.STDERR_PIPE
+            );
+            proc.communicate_utf8_async(null, null, (proc, res) => {
+                try {
+                    let [, stdout, stderr] = proc.communicate_utf8_finish(res);
+                    if (proc.get_successful()) {
+                        Main.notify('File sent successfully: ' + file + ' → ' + dest);
+                    } else {
+                        myError("Failed to send file: " + file + " to " + dest);
+                        if (stderr) {
+                            myError("Error: " + stderr);
+                        }
+                    }
+                } catch (e) {
+                    myError(e);
+                }
+            });
+        } catch (e) {
+            myError(e);
+        }
+    }
+}
 
 function cmdTailscaleSwitchList(unprivileged  = true) {
-    let args = ["switch", "--list"]
+    args = ["switch", "--list"]
     let command = (unprivileged ? ["tailscale"] : ["pkexec", "tailscale"]).concat(args);
 
     try {
@@ -525,7 +553,6 @@ function cmdTailscaleStatus() {
 
 function cmdTailscale({args, unprivileged = true, addLoginServer = true}) {
     let original_args = args
-
     if (addLoginServer) {
         args = args.concat(["--login-server=" + SETTINGS.get_string('login-server')])
     }
@@ -589,12 +616,13 @@ function cmdTailscaleRecFiles() {
 const TailscalePopup = GObject.registerClass(
     class TailscalePopup extends PanelMenu.Button {
 
-        _init(dir_path) {
+        _init() {
             super._init(0);
 
-            icon_down = Gio.icon_new_for_string(dir_path + '/icon-down.svg');
-            icon_up = Gio.icon_new_for_string(dir_path + '/icon-up.svg');
-            icon_exit_node = Gio.icon_new_for_string(dir_path + '/icon-exit-node.svg');
+
+            icon_down = Gio.icon_new_for_string(Me.dir.get_path() + '/icon-down.svg');
+            icon_up = Gio.icon_new_for_string(Me.dir.get_path() + '/icon-up.svg');
+            icon_exit_node = Gio.icon_new_for_string(Me.dir.get_path() + '/icon-exit-node.svg');
 
             icon = new St.Icon({
                 gicon: icon_down,
@@ -612,7 +640,8 @@ const TailscalePopup = GObject.registerClass(
             // monkey-patch to nuke this property - it's buggy, if submenus are in a tree,
             // then it causes the parent to close when a child is opened, even though the parent
             // should stay open so you can see the child!
-            this.menu._setOpenedSubMenu = () => {};``
+            this.menu._setOpenedSubMenu = () => {};
+
 
             // ------ MAIN STATUS ITEM ------
             statusItem = new PopupMenu.PopupMenuItem(statusString, { reactive: false });
@@ -766,53 +795,27 @@ const TailscalePopup = GObject.registerClass(
     }
 );
 
-
-
-let tailscale;
-
-
-export default class TailscaleStatusExtension extends Extension {
-    enable() {
-        SETTINGS = this.getSettings('org.gnome.shell.extensions.tailscale-status');
-
-        cmdTailscaleStatus()
-
-        tailscale = new TailscalePopup(this.path);
-        Main.panel.addToStatusArea('tailscale', tailscale, 1);
-    }
-
-    disable() {
-
-        tailscale.destroy();
-        tailscale = null;
-        SETTINGS = null;
-        accounts = [];
-        nodes = [];
-        currentAccount = null;
-        nodesMenu = null;
-        accountButton = null;
-        accountsMenu = null;
-        accountIndicator = null;
-        logoutButton = null;
-        exitNodeMenu = null;
-        sendMenu = null;
-        statusItem = null;
-        authItem = null;
-        needToAuth = true;
-        authUrl = null;
-
-        health = null;
-
-        receiveFilesItem = null;
-        shieldItem = null;
-        acceptRoutesItem = null;
-        allowLanItem = null;
-        statusSwitchItem = null;
-        downloads_path = null;
-        icon = null;
-        icon_down = null;
-        icon_up = null;
-        icon_exit_node = null;
-
-    }
+function init() {
 }
+
+function enable() {
+
+    SETTINGS = ExtensionUtils.getSettings(
+        'org.gnome.shell.extensions.tailscale-status');
+    cmdTailscaleStatus()
+
+    tailscale = new TailscalePopup();
+    Main.panel.addToStatusArea('tailscale', tailscale, 1);
+}
+
+function disable() {
+    tailscale.destroy();
+    tailscale = null;
+    icon = null;
+    icon_down = null;
+    icon_up = null;
+    icon_exit_node = null;
+    SETTINGS = null;
+    accounts = [];
+}
+
