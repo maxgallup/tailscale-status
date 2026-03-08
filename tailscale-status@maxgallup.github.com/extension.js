@@ -20,6 +20,9 @@ const enabledString = "🟢";
 const disabledString = "⚫";
 const ownConnectionString = "💻";
 
+let EXT_VERSION = "dev";
+let EXT_UUID = "unknown";
+
 class TailscaleNode {
     /**
      * @param {boolean} _isMullvadExitNode
@@ -58,6 +61,16 @@ let nodes = [];
 let nodesTree = { nodes: [], subTrees: {} }
 let accounts = [];
 let currentAccount = "(click Update Accounts List)";
+let currentProfileId = null;
+let switchListInFlight = false;
+let switchProfileInFlight = false;
+
+const LOCALAPI_HOST = "local-tailscaled.sock";
+const LOCALAPI_BASE = "http://" + LOCALAPI_HOST;
+const LOCALAPI_SOCKET_CANDIDATES = [
+    "/run/tailscale/tailscaled.sock",
+    "/var/run/tailscale/tailscaled.sock",
+];
 
 let nodesMenu;
 let accountButton;
@@ -87,11 +100,149 @@ let SETTINGS;
 
 
 function myWarn(string) {
-    console.log("🟡 [tailscale-status]: " + string);
+    console.log("🟡 [tailscale-status " + EXT_VERSION + "]: " + string);
 }
 
 function myError(string) {
-    console.log("🔴 [tailscale-status]: " + string);
+    console.log("🔴 [tailscale-status " + EXT_VERSION + "]: " + string);
+}
+
+function localApiSocketPath() {
+    for (const path of LOCALAPI_SOCKET_CANDIDATES) {
+        if (GLib.file_test(path, GLib.FileTest.EXISTS)) {
+            return path;
+        }
+    }
+    return null;
+}
+
+function localApiCurl({ method, path, jsonBody = null, inputFile = null, outputFile = null, extraHeaders = [], usePkexec = false }, onSuccess, onError) {
+    const socketPath = localApiSocketPath();
+    if (!socketPath) {
+        const msg = "tailscaled socket not found";
+        myError(msg);
+        if (onError) {
+            onError(msg);
+        }
+        return;
+    }
+
+    const url = LOCALAPI_BASE + path;
+    let args = [
+        "curl",
+        "--silent",
+        "--show-error",
+        "--unix-socket",
+        socketPath,
+        "--request",
+        method,
+        "--header",
+        "Host: " + LOCALAPI_HOST,
+        "--write-out",
+        "\n__HTTP_STATUS__:%{http_code}\n",
+    ];
+
+    for (const header of extraHeaders) {
+        args.push("--header", header);
+    }
+
+    if (jsonBody !== null) {
+        args.push("--header", "Content-Type: application/json");
+        args.push("--data-binary", JSON.stringify(jsonBody));
+    }
+
+    if (inputFile !== null) {
+        args.push("--header", "Content-Type: application/octet-stream");
+        args.push("--data-binary", "@" + inputFile);
+    }
+
+    if (outputFile !== null) {
+        args.push("--output", outputFile);
+    }
+
+    args.push(url);
+
+    if (usePkexec) {
+        args = ["/usr/bin/pkexec"].concat(args);
+    }
+
+    try {
+        let proc = Gio.Subprocess.new(
+            args,
+            Gio.SubprocessFlags.STDOUT_PIPE | Gio.SubprocessFlags.STDERR_PIPE
+        );
+        proc.communicate_utf8_async(null, null, (proc, res) => {
+            try {
+                let [, stdout, stderr] = proc.communicate_utf8_finish(res);
+                const marker = "\n__HTTP_STATUS__:";
+                let status = 0;
+                let body = stdout;
+                const idx = stdout.lastIndexOf(marker);
+                if (idx >= 0) {
+                    body = stdout.slice(0, idx);
+                    const statusText = stdout.slice(idx + marker.length).trim();
+                    status = parseInt(statusText, 10) || 0;
+                }
+                if (proc.get_successful() && status > 0 && status < 400) {
+                    onSuccess(body, status);
+                } else {
+                    const msg = (body && body.trim().length > 0) ? body.trim() : (stderr || "").trim();
+                    myWarn(msg.length > 0 ? msg : "localapi request failed");
+                    if (onError) {
+                        onError(msg, status);
+                    }
+                }
+            } catch (e) {
+                myError(e);
+                if (onError) {
+                    onError(e);
+                }
+            }
+        });
+    } catch (e) {
+        myError(e);
+        if (onError) {
+            onError(e);
+        }
+    }
+}
+
+function localApiJsonRequest(method, path, jsonBody, onSuccess, onError, usePkexec = false) {
+    localApiCurl({ method, path, jsonBody, usePkexec }, (body) => {
+        if (body == null || body.trim().length === 0) {
+            onSuccess(null);
+            return;
+        }
+        try {
+            const parsed = JSON.parse(body);
+            onSuccess(parsed);
+        } catch (e) {
+            myError(e);
+            if (onError) {
+                onError(e);
+            }
+        }
+    }, onError);
+}
+
+function localApiJsonRequestWithFallback(method, path, jsonBody, onSuccess, onError, allowPkexec = true) {
+    localApiJsonRequest(method, path, jsonBody, onSuccess, (msg, status) => {
+        if (allowPkexec && (status === 401 || status === 403)) {
+            localApiJsonRequest(method, path, jsonBody, onSuccess, onError, true);
+        } else if (onError) {
+            onError(msg, status);
+        }
+    });
+}
+
+function localApiCurlWithFallback(params, onSuccess, onError, allowPkexec = true) {
+    localApiCurl({ ...params, usePkexec: false }, onSuccess, (msg, status) => {
+        if (allowPkexec && (status === 401 || status === 403)) {
+            localApiCurl({ ...params, usePkexec: true }, onSuccess, onError);
+        } else if (onError) {
+            onError(msg, status);
+        }
+    });
 }
 
 
@@ -213,6 +364,9 @@ function getUsername(json) {
     return json.Self.HostName
 }
 function setStatus(json) {
+    if (!authItem || !statusItem || !accountIndicator || !statusSwitchItem) {
+        return;
+    }
     authItem.label.text = "Logged in: " + getUsername(json);
     accountIndicator.label.text = "Account: " + currentAccount;
     authItem.sensitive = false;
@@ -258,11 +412,30 @@ function setStatus(json) {
             break;
 
         default:
-            myError("Error: unknown state");
+            statusItem.label.text = statusString + (json.BackendState || "unknown");
+            setAllItems(false);
+    }
+}
+
+function applyPrefsToUi(prefs) {
+    if (!prefs || !shieldItem || !acceptRoutesItem || !allowLanItem) {
+        return;
+    }
+    if (typeof prefs.ShieldsUp === "boolean") {
+        shieldItem.setToggleState(prefs.ShieldsUp);
+    }
+    if (typeof prefs.RouteAll === "boolean") {
+        acceptRoutesItem.setToggleState(prefs.RouteAll);
+    }
+    if (typeof prefs.ExitNodeAllowLANAccess === "boolean") {
+        allowLanItem.setToggleState(prefs.ExitNodeAllowLANAccess);
     }
 }
 
 function setAllItems(b) {
+    if (!shieldItem || !acceptRoutesItem || !allowLanItem || !statusSwitchItem) {
+        return;
+    }
     shieldItem.sensitive = b;
     acceptRoutesItem.sensitive = b;
     allowLanItem.sensitive = b;
@@ -275,7 +448,6 @@ function setAllItems(b) {
     accountButton.sensitive = b;
     logoutButton.sensitive = b;
 }
-
 
 
 function refreshNodesMenu() {
@@ -350,7 +522,7 @@ function _refreshExitNodesMenu(menu, t, indent = '', rootScroller = null) {
 
         const item = new PopupMenu.PopupMenuItem(indent+node.name)
         item.connect('activate', () => {
-            cmdTailscale({ args: ["up", "--exit-node=" + node.address, "--reset"] })
+            setExitNode(node.address)
         });
         item.setOrnament(node.usesExit ? 1 : 0)
         menu.addMenuItem(item);
@@ -380,7 +552,7 @@ function refreshExitNodesMenu() {
 
     var noneItem = new PopupMenu.PopupMenuItem('None');
     noneItem.connect('activate', () => {
-        cmdTailscale({ args: ["up", "--exit-node=", "--reset"] });
+        clearExitNode();
     });
     noneItem.setOrnament(usesExit ? 0 : 1)
     exitNodeMenu.menu.addMenuItem(noneItem, 0);
@@ -412,8 +584,8 @@ function sendFiles(dest) {
                 let [, stdout, stderr] = proc.communicate_utf8_finish(res);
                 if (proc.get_successful()) {
                     if (stdout != '') {
-                        files = stdout.trim().split("|")
-                        cmdTailscaleFile(files, dest)
+                        const files = stdout.trim().split("|")
+                        localApiSendFiles(files, dest)
                     }
                 } else {
                     myError("zenity failed");
@@ -427,163 +599,292 @@ function sendFiles(dest) {
     }
 }
 
+function localApiFindFileTarget(targets, destAddress) {
+    for (const target of targets) {
+        const node = target.Node || {};
+        const addresses = target.Addresses || node.Addresses || [];
+        if (addresses.includes(destAddress)) {
+            return target;
+        }
+    }
+    return null;
+}
 
-function cmdTailscaleSwitchList(unprivileged  = true) {
-    let args = ["switch", "--list"]
-    let command = (unprivileged ? ["tailscale"] : ["pkexec", "tailscale"]).concat(args);
+function localApiSendFiles(files, destAddress) {
+    localApiJsonRequestWithFallback("GET", "/localapi/v0/file-targets", null, (targets) => {
+        if (!targets || targets.length === 0) {
+            myWarn("no file targets available");
+            return;
+        }
+        const target = localApiFindFileTarget(targets, destAddress);
+        if (!target) {
+            myWarn("no matching file target for " + destAddress);
+            Main.notify("No file target for " + destAddress);
+            return;
+        }
+        const node = target.Node || {};
+        const stableId = node.StableID || node.StableId || target.StableID || target.StableId;
+        if (!stableId) {
+            myWarn("file target missing stable ID");
+            return;
+        }
+        localApiSendNextFile(stableId, files, 0);
+    });
+}
 
-    try {
-        let proc = Gio.Subprocess.new(
-            command,
-            Gio.SubprocessFlags.STDOUT_PIPE | Gio.SubprocessFlags.STDERR_PIPE
-        );
-        proc.communicate_utf8_async(null, null, (proc, res) => {
-            try {
-                let [, stdout, stderr] = proc.communicate_utf8_finish(res);
-                if (proc.get_successful()) {
-                    accounts = stdout.split("\n")
-                    accounts = accounts.filter((item) => item.length > 0)
-                    accountsMenu.menu.removeAll()
-                    accounts.forEach((account) => {
-                        if (account.slice(-2) == " *") {
-                            account = account.slice(0, -2)
-                            currentAccount = account
-                        }
-                        let accountItem = new PopupMenu.PopupMenuItem(account)
-                        accountItem.connect('activate', () => {
-                            // find the mail address in the account string
-                            const emailRegex = /[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/;
-                            const email = account.match(emailRegex);
-                            if (email == null) {
-                                myError("failed to extract email from account string")
-                                return
-                            }
-                            cmdTailscaleSwitch(email[0]);
-                        });
-                        accountsMenu.menu.addMenuItem(accountItem);
-                    });
-                } else {
-                    if (unprivileged) {
-                        myWarn("retrying tailscale switch --list")
-                        cmdTailscaleSwitchList(false)
-                    } else {
-                        myError("cmd 'tailscale switch --list' failed")
-                    }
-                }
-            } catch (e) {
-                myError(e);
-            }
+function localApiSendNextFile(stableId, files, index) {
+    if (index >= files.length) {
+        Main.notify("Files sent");
+        return;
+    }
+    const filePath = files[index];
+    const baseName = GLib.path_get_basename(filePath);
+    const path = "/localapi/v0/file-put/" + encodeURIComponent(stableId) + "/" + encodeURIComponent(baseName);
+    localApiCurlWithFallback({ method: "PUT", path, inputFile: filePath }, () => {
+        localApiSendNextFile(stableId, files, index + 1);
+    }, () => {
+        Main.notify("Failed to send " + baseName);
+    });
+}
+
+
+function localApiStartWithPrefs(prefs) {
+    localApiJsonRequestWithFallback("POST", "/localapi/v0/start", { UpdatePrefs: prefs }, () => {
+        cmdTailscaleStatus();
+    }, null, true);
+}
+
+function localApiEditPrefs(maskedPrefs) {
+    localApiJsonRequestWithFallback("PATCH", "/localapi/v0/prefs", maskedPrefs, () => {
+        cmdTailscaleStatus();
+    }, null, true);
+}
+
+function localApiLogout() {
+    localApiCurlWithFallback({ method: "POST", path: "/localapi/v0/logout" }, () => {
+        cmdTailscaleStatus();
+    }, null, true);
+}
+
+function localApiLoginInteractive() {
+    localApiCurlWithFallback({ method: "POST", path: "/localapi/v0/login-interactive" }, () => {
+        cmdTailscaleStatus();
+    }, null, true);
+}
+
+function setWantRunning(on) {
+    if (on) {
+        let prefs = {
+            WantRunning: true,
+            WantRunningSet: true,
+        };
+        const loginServer = SETTINGS.get_string('login-server');
+        if (loginServer && loginServer.length > 0) {
+            prefs.ControlURL = loginServer;
+            prefs.ControlURLSet = true;
+        }
+        localApiStartWithPrefs(prefs);
+    } else {
+        localApiEditPrefs({
+            WantRunning: false,
+            WantRunningSet: true,
         });
-    } catch (e) {
-        myError(e);
     }
 }
 
-function cmdTailscaleSwitch(account) {
-    if (currentAccount == account) {
-        Main.notify("Already logged in with " + account)
-        return
-    } else {
-        Main.notify("Switching to " + account)
-        currentAccount = account
+function setShieldsUp(on) {
+    localApiEditPrefs({
+        ShieldsUp: on,
+        ShieldsUpSet: true,
+    });
+}
+
+function setAcceptRoutes(on) {
+    localApiEditPrefs({
+        RouteAll: on,
+        RouteAllSet: true,
+    });
+}
+
+function setExitNodeAllowLanAccess(on) {
+    localApiEditPrefs({
+        ExitNodeAllowLANAccess: on,
+        ExitNodeAllowLANAccessSet: true,
+    });
+}
+
+function setExitNode(exitNodeIP) {
+    localApiEditPrefs({
+        ExitNodeID: "",
+        ExitNodeIDSet: true,
+        ExitNodeIP: exitNodeIP,
+        ExitNodeIPSet: true,
+    });
+}
+
+function clearExitNode() {
+    localApiEditPrefs({
+        ExitNodeID: "",
+        ExitNodeIDSet: true,
+        ExitNodeIP: "",
+        ExitNodeIPSet: true,
+    });
+}
+
+function cmdTailscaleSwitchList(allowPkexec = true) {
+    if (switchListInFlight) {
+        return;
     }
+    switchListInFlight = true;
+    if (accountButton) {
+        accountButton.sensitive = false;
+    }
+    if (accountsMenu) {
+        accountsMenu.sensitive = false;
+    }
+    localApiJsonRequestWithFallback("GET", "/localapi/v0/profiles/", null, (profiles) => {
+        accounts = profiles || [];
+        accountsMenu.menu.removeAll();
 
-    cmdTailscale({
-        args: ["switch", account],
-        addLoginServer: false
-    })
+        let current = null;
+        for (const profile of accounts) {
+            if (profile.CurrentProfile || profile.IsCurrent || profile.Active) {
+                current = profile;
+                break;
+            }
+        }
 
+        if (current) {
+            currentProfileId = current.ID;
+            currentAccount = current.Name || current.UserProfile?.LoginName || current.ID;
+        } else if (currentProfileId) {
+            const match = accounts.find((profile) => profile.ID === currentProfileId);
+            if (match) {
+                currentAccount = match.Name || match.UserProfile?.LoginName || match.ID;
+            }
+        } else if (!currentProfileId) {
+            currentAccount = currentAccount || "(none)";
+        }
+
+        accounts.forEach((profile) => {
+            const label = profile.Name || profile.UserProfile?.LoginName || profile.ID;
+            let accountItem = new PopupMenu.PopupMenuItem(label);
+            accountItem.connect('activate', () => {
+                cmdTailscaleSwitch(profile.ID);
+            });
+            accountsMenu.menu.addMenuItem(accountItem);
+        });
+        switchListInFlight = false;
+        if (accountButton) {
+            accountButton.sensitive = true;
+        }
+        if (accountsMenu) {
+            accountsMenu.sensitive = true;
+        }
+    }, () => {
+        myWarn("failed to load profiles list");
+        switchListInFlight = false;
+        if (accountButton) {
+            accountButton.sensitive = true;
+        }
+        if (accountsMenu) {
+            accountsMenu.sensitive = true;
+        }
+    }, allowPkexec);
+}
+
+function cmdTailscaleSwitch(profileId) {
+    if (switchProfileInFlight) {
+        return;
+    }
+    if (currentProfileId == profileId) {
+        Main.notify("Already logged in with " + currentAccount);
+        return;
+    } else {
+        Main.notify("Switching account");
+        currentProfileId = profileId;
+    }
+    switchProfileInFlight = true;
+    if (accountButton) {
+        accountButton.sensitive = false;
+    }
+    if (accountsMenu) {
+        accountsMenu.sensitive = false;
+    }
+    localApiCurl({ method: "POST", path: "/localapi/v0/profiles/" + encodeURIComponent(profileId), usePkexec: true }, () => {
+        cmdTailscaleStatus();
+        cmdTailscaleSwitchList(true);
+        switchProfileInFlight = false;
+        if (accountButton) {
+            accountButton.sensitive = true;
+        }
+        if (accountsMenu) {
+            accountsMenu.sensitive = true;
+        }
+    }, () => {
+        switchProfileInFlight = false;
+        if (accountButton) {
+            accountButton.sensitive = true;
+        }
+        if (accountsMenu) {
+            accountsMenu.sensitive = true;
+        }
+    });
 }
 
 function cmdTailscaleStatus() {
-    try {
-        let proc = Gio.Subprocess.new(
-            // ["curl", "--silent", "--unix-socket", "/run/tailscale/tailscaled.sock", "http://localhost/localapi/v0/status" ],
-            ["tailscale", "status", "--json"],
-            Gio.SubprocessFlags.STDOUT_PIPE | Gio.SubprocessFlags.STDERR_PIPE
-        );
-        proc.communicate_utf8_async(null, null, (proc, res) => {
-
-            try {
-                let [, stdout, stderr] = proc.communicate_utf8_finish(res);
-                if (proc.get_successful()) {
-                    const j = JSON.parse(stdout);
-                    extractNodeInfo(j);
-                    setStatus(j);
-                    refreshExitNodesMenu();
-                    refreshSendMenu();
-                    refreshNodesMenu();
-                }
-            } catch (e) {
-                myError(e);
-            }
+    localApiJsonRequest("GET", "/localapi/v0/status", null, (j) => {
+        if (!j) {
+            return;
+        }
+        extractNodeInfo(j);
+        setStatus(j);
+        localApiJsonRequest("GET", "/localapi/v0/prefs", null, (prefs) => {
+            applyPrefsToUi(prefs);
+        }, (msg, status) => {
+            myWarn("prefs sync failed" + (status ? " (" + status + ")" : ""));
         });
-    } catch (e) {
-        myError(e);
-    }
-}
-
-function cmdTailscale({args, unprivileged = true, addLoginServer = true}) {
-    let original_args = args
-
-    if (addLoginServer) {
-        args = args.concat(["--login-server=" + SETTINGS.get_string('login-server')])
-    }
-
-    let command = (unprivileged ? ["tailscale"] : ["pkexec", "tailscale"]).concat(args);
-
-    try {
-        let proc = Gio.Subprocess.new(
-            command,
-            Gio.SubprocessFlags.STDOUT_PIPE | Gio.SubprocessFlags.STDERR_PIPE
-        );
-        proc.communicate_utf8_async(null, null, (proc, res) => {
-            try {
-                proc.communicate_utf8_finish(res);
-                if (!proc.get_successful()) {
-                    if (unprivileged) {
-                        cmdTailscale({
-                            args: args[0] == "up" ? original_args.concat(["--operator=" + GLib.get_user_name(), "--reset"]) : original_args,
-                            unprivileged: false,
-                            addLoginServer: addLoginServer
-                        })
-                    } else {
-                        myWarn("failed @ cmdTailscale");
-                    }
-                } else {
-                    cmdTailscaleStatus()
-                }
-            } catch (e) {
-                myError(e);
-            }
-        });
-    } catch (e) {
-        myError(e);
-    }
+        refreshExitNodesMenu();
+        refreshSendMenu();
+        refreshNodesMenu();
+    }, () => {
+        myWarn("failed to fetch status");
+    });
 }
 
 function cmdTailscaleRecFiles() {
-    try {
-        let proc = Gio.Subprocess.new(
-            ["pkexec", "tailscale", "file", "get", downloads_path],
-            Gio.SubprocessFlags.STDOUT_PIPE | Gio.SubprocessFlags.STDERR_PIPE
-        );
-        proc.communicate_utf8_async(null, null, (proc, res) => {
-            try {
-                proc.communicate_utf8_finish(res);
-                if (proc.get_successful()) {
-                    Main.notify('Saved files to ' + downloads_path);
-                } else {
-                    Main.notify('Unable to receive files to ' + downloads_path, 'check logs with journalctl -f -o cat /usr/bin/gnome-shell');
-                    myWarn("failed to accept files to " + downloads_path)
-                }
-            } catch (e) {
-                myError(e);
-            }
-        });
-    } catch (e) {
-        myError(e);
+    localApiJsonRequestWithFallback("GET", "/localapi/v0/files/", null, (files) => {
+        if (!files || files.length === 0) {
+            Main.notify("No files waiting");
+            return;
+        }
+        localApiReceiveNextFile(files, 0);
+    }, null, true);
+}
+
+function localApiReceiveNextFile(files, index) {
+    if (index >= files.length) {
+        Main.notify("Saved files to " + downloads_path);
+        return;
     }
+    const entry = files[index] || {};
+    const name = entry.Name || entry.name;
+    if (!name) {
+        localApiReceiveNextFile(files, index + 1);
+        return;
+    }
+    const destPath = GLib.build_filenamev([downloads_path, name]);
+    const path = "/localapi/v0/files/" + encodeURIComponent(name);
+    localApiCurlWithFallback({ method: "GET", path, outputFile: destPath }, () => {
+        localApiCurlWithFallback({ method: "DELETE", path }, () => {
+            localApiReceiveNextFile(files, index + 1);
+        }, () => {
+            localApiReceiveNextFile(files, index + 1);
+        });
+    }, () => {
+        Main.notify("Unable to receive " + name);
+        localApiReceiveNextFile(files, index + 1);
+    });
 }
 
 const TailscalePopup = GObject.registerClass(
@@ -612,7 +913,7 @@ const TailscalePopup = GObject.registerClass(
             // monkey-patch to nuke this property - it's buggy, if submenus are in a tree,
             // then it causes the parent to close when a child is opened, even though the parent
             // should stay open so you can see the child!
-            this.menu._setOpenedSubMenu = () => {};``
+            this.menu._setOpenedSubMenu = () => {};
 
             // ------ MAIN STATUS ITEM ------
             statusItem = new PopupMenu.PopupMenuItem(statusString, { reactive: false });
@@ -624,9 +925,7 @@ const TailscalePopup = GObject.registerClass(
                 cmdTailscaleStatus()
                 if (authUrl.length == 0) {
                     try {
-                        cmdTailscale({
-                            args: ["up"],
-                        });
+                        localApiLoginInteractive();
                     } catch (e) {
                         myError(e);
                     }
@@ -641,19 +940,16 @@ const TailscalePopup = GObject.registerClass(
             statusSwitchItem = new PopupMenu.PopupSwitchMenuItem("Tailscale", false);
             statusSwitchItem.connect('activate', () => {
                 if (statusSwitchItem.state) {
-                    cmdTailscale({ args: ["up"] });
+                    setWantRunning(true);
                 } else {
-                    cmdTailscale({
-                        args: ["down"],
-                        addLoginServer: false
-                    });
+                    setWantRunning(false);
                 }
             })
 
             // ------ UPDATE ACCOUNTS ------
             accountButton = new PopupMenu.PopupMenuItem("Update Accounts List");
             accountButton.connect('activate', (item) => {
-                cmdTailscaleSwitchList()
+                cmdTailscaleSwitchList(true)
             })
 
             // ------ ACCOUNTS ------
@@ -669,9 +965,9 @@ const TailscalePopup = GObject.registerClass(
             shieldItem = new PopupMenu.PopupSwitchMenuItem("Block Incoming", false);
             shieldItem.connect('activate', () => {
                 if (shieldItem.state) {
-                    cmdTailscale({ args: ["up", "--shields-up"] });
+                    setShieldsUp(true);
                 } else {
-                    cmdTailscale({ args: ["up", "--shields-up=false", "--reset"] });
+                    setShieldsUp(false);
                 }
             })
 
@@ -680,9 +976,9 @@ const TailscalePopup = GObject.registerClass(
             acceptRoutesItem = new PopupMenu.PopupSwitchMenuItem("Accept Routes", false);
             acceptRoutesItem.connect('activate', () => {
                 if (acceptRoutesItem.state) {
-                    cmdTailscale({ args: ["up", "--accept-routes"] });
+                    setAcceptRoutes(true);
                 } else {
-                    cmdTailscale({ args: ["up", "--accept-routes=false", "--reset"] });
+                    setAcceptRoutes(false);
                 }
             })
 
@@ -691,13 +987,13 @@ const TailscalePopup = GObject.registerClass(
             allowLanItem.connect('activate', () => {
                 if (allowLanItem.state) {
                     if (nodes[0].usesExit) {
-                        cmdTailscale({ args: ["up", "--exit-node-allow-lan-access"] });
+                        setExitNodeAllowLanAccess(true);
                     } else {
                         Main.notify("Must setup exit node first");
                         allowLanItem.setToggleState(false);
                     }
                 } else {
-                    cmdTailscale({ args: ["up", "--exit-node-allow-lan-access=false", "--reset"] });
+                    setExitNodeAllowLanAccess(false);
                 }
             })
 
@@ -716,10 +1012,7 @@ const TailscalePopup = GObject.registerClass(
             // ------ LOG OUT -------
             logoutButton = new PopupMenu.PopupMenuItem("Log Out");
             logoutButton.connect('activate', () => {
-                cmdTailscale({
-                    args: ["logout"],
-                    addLoginServer: false,
-                });
+                localApiLogout();
             })
 
             // ------ ABOUT MENU------
@@ -773,12 +1066,14 @@ let tailscale;
 
 export default class TailscaleStatusExtension extends Extension {
     enable() {
-        SETTINGS = this.getSettings('org.gnome.shell.extensions.tailscale-status');
-
-        cmdTailscaleStatus()
-
+        SETTINGS = this.getSettings('org.gnome.shell.extensions.tailscale-status-api');
+        if (this.metadata) {
+            EXT_VERSION = this.metadata.version ?? EXT_VERSION;
+            EXT_UUID = this.metadata.uuid ?? EXT_UUID;
+        }
         tailscale = new TailscalePopup(this.path);
         Main.panel.addToStatusArea('tailscale', tailscale, 1);
+        cmdTailscaleStatus();
     }
 
     disable() {
