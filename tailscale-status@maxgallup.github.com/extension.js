@@ -427,6 +427,31 @@ function sendFiles(dest) {
 }
 
 
+function cmdTailscaleFile(files, dest) {
+    try {
+        let command = ["pkexec", "tailscale", "file", "cp"].concat(files).concat([dest + ":"]);
+        let proc = Gio.Subprocess.new(
+            command,
+            Gio.SubprocessFlags.STDOUT_PIPE | Gio.SubprocessFlags.STDERR_PIPE
+        );
+        proc.communicate_utf8_async(null, null, (proc, res) => {
+            try {
+                proc.communicate_utf8_finish(res);
+                if (proc.get_successful()) {
+                    Main.notify('Files sent to ' + dest);
+                } else {
+                    Main.notify('Failed to send files to ' + dest);
+                    myWarn("failed to send files to " + dest);
+                }
+            } catch (e) {
+                myError(e);
+            }
+        });
+    } catch (e) {
+        myError(e);
+    }
+}
+
 function cmdTailscaleSwitchList(unprivileged  = true) {
     let args = ["switch", "--list"]
     let command = (unprivileged ? ["tailscale"] : ["pkexec", "tailscale"]).concat(args);
