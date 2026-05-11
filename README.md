@@ -40,13 +40,16 @@ The Makefile includes useful targets for development. If running on wayland, use
 If you want to contribute with new translations, follow these steps:
 
 #### Compiling Translation
-This extension uses `gettext` for i18n. If you modify or add a new `.po` file (e.g., `po_br.po`) in the `po/` directory, you must compile it into a `.mo` machine-object file before packing the extension.
-Rum the folling command from the root of the repository:
+This extension uses `gettext` for i18n. If you modify or add a new `.po` file (e.g., `po_br.po`) in the `po/` directory, you must compile it into a `.mo` machine-object file before packing the extension or testing it.
+Run the folling command from the root of the repository:
 ```
 msgfmt -cv -o po/tailscale-status.mo po/<your_language>.po
 ```
 
 ### TODOs
 - [x] Rewrite extension to utilize tailscale api instead of running `tailscale` commands.
-- [ ] Review api endpoints
+- [x] Create a Fallback to the CLI if an endpoint fails
+- [x] Continuous listen to incoming files
+- [x] Internalization (i18n)
+- [ ] Review api endpoints and extend the LocalAPI integration
 
