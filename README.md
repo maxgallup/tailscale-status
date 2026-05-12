@@ -38,6 +38,10 @@ Sadly, we must maintain two separate branches for before and after gnome 45 due 
 The Makefile includes useful targets for development. If running on wayland, use `make test-wayland` to open a nested gnome sessions.
 
 If you want to contribute with new translations, follow these steps:
+1. Copy the pt_BR.po file and rename it;
+2. Modify the translated strings;
+3. Ensure the file is in the folder `po/`;
+4. Compile the translation in order to test it.
 
 #### Compiling Translation
 This extension uses `gettext` for i18n. If you modify or add a new `.po` file (e.g., `po_br.po`) in the `po/` directory, you must compile it into a `.mo` machine-object file before packing the extension or testing it.
