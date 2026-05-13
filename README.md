@@ -38,7 +38,7 @@ Sadly, we must maintain two separate branches for before and after gnome 45 due 
 The Makefile includes useful targets for development. If running on wayland, use `make test-wayland` to open a nested gnome sessions.
 
 If you want to contribute with new translations, follow these steps:
-1. Copy the pt_BR.po file and rename it;
+1. Copy the pt_BR.po file and rename it to <i18n_lang_code>.po;
 2. Modify the translated strings;
 3. Ensure the file is in the folder `po/`;
 4. Compile the translation in order to test it.
@@ -54,6 +54,6 @@ msgfmt -cv -o po/tailscale-status.mo po/<your_language>.po
 - [x] Rewrite extension to utilize tailscale api instead of running `tailscale` commands.
 - [x] Create a Fallback to the CLI if an endpoint fails
 - [x] Continuous listen to incoming files
-- [x] Internalization (i18n)
+- [x] Internationalization (i18n)
 - [ ] Review api endpoints and extend the LocalAPI integration
 
