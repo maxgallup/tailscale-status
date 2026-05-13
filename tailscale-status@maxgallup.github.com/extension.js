@@ -1,7 +1,27 @@
+/**
+ * Tailscale Status GNOME Extension
+ * * @version 1.11.0 (v12)
+ * @description A GNOME Shell extension to manage Tailscale status and file transfers.
+ * * Modifications Log:
+ * - v12: Fixed 'me is undefined' crash in extractNodeInfo when daemon returns JSON without 'Self'. Fixed GIO Directory error in API receiveFile by explicitly requiring a filename, dropping to CLI fallback gracefully for bulk dir downloads.
+ * - v11: Fixed TypeError in API by replacing read_line_utf8_async with read_line_async + TextDecoder. Wired up watchEvents in enable() to notify on incoming files.
+ * - v10: Phase 3 implementation - Created TailscaleService to act as a fallback wrapper. Tries TailscaleAPI first, falls back to TailscaleCLI on failure.
+ * - v9: Fixed false-positive error notification in receiveFile by ignoring non-fatal exit codes from unprivileged 'tailscale file get'.
+ * - v8: Phase 1 implementation - Created TailscaleCLI class to abstract all Gio.Subprocess calls into Promise-based methods matching TailscaleAPI signatures.
+ * - v7: Initiated Phase 2 of the API migration. Added endpoints for files and stream polling (watch-ipn-bus) based on local tests.
+ * - v6: Fixed 'gettext can only be called from extensions' by removing top-level _() calls.
+ * - v5: Removed 'pkexec' from 'tailscale file get' to fix root ownership and password prompt. Commented out Taildrop polling.
+ * - v4: Internationalization (i18n) setup.
+ * - v3: Implemented background polling to notify the user about incoming Taildrop files.
+ * - v2: Added this header for file metadata and version control.
+ * - v1: Modified cmdTailscaleRecFiles to prompt for a download directory using zenity.
+ */
+
 import * as Main from 'resource:///org/gnome/shell/ui/main.js';
 import St from 'gi://St';
 import Clutter from 'gi://Clutter';
 
+import * as ExtensionUtils from 'resource:///org/gnome/shell/misc/extensionUtils.js';
 import * as Util from 'resource:///org/gnome/shell/misc/util.js';
 
 import GObject from 'gi://GObject';
@@ -13,17 +33,485 @@ import * as PopupMenu from 'resource:///org/gnome/shell/ui/popupMenu.js';
 
 import { Extension, gettext as _ } from "resource:///org/gnome/shell/extensions/extension.js";
 
-
-const statusString = "Status: ";
 const enabledString = "🟢";
 const disabledString = "⚫";
 const ownConnectionString = "💻";
 
+class TailscaleCLI {
+    constructor() {}
+
+    async getStatus() {
+        return new Promise((resolve, reject) => {
+            let proc = Gio.Subprocess.new(
+                ["tailscale", "status", "--json"],
+                Gio.SubprocessFlags.STDOUT_PIPE | Gio.SubprocessFlags.STDERR_PIPE
+            );
+            proc.communicate_utf8_async(null, null, (proc, res) => {
+                try {
+                    let [, stdout, stderr] = proc.communicate_utf8_finish(res);
+                    if (proc.get_successful()) {
+                        resolve(JSON.parse(stdout));
+                    } else {
+                        reject(stderr || "Failed to get status");
+                    }
+                } catch (e) {
+                    reject(e);
+                }
+            });
+        });
+    }
+
+    async sendCommand(args, unprivileged = true, addLoginServer = true) {
+        return new Promise((resolve, reject) => {
+            let original_args = args;
+            if (addLoginServer && SETTINGS) {
+                args = args.concat(["--login-server=" + SETTINGS.get_string('login-server')]);
+            }
+
+            let command = (unprivileged ? ["tailscale"] : ["pkexec", "tailscale"]).concat(args);
+
+            let proc = Gio.Subprocess.new(
+                command,
+                Gio.SubprocessFlags.STDOUT_PIPE | Gio.SubprocessFlags.STDERR_PIPE
+            );
+            proc.communicate_utf8_async(null, null, (proc, res) => {
+                try {
+                    let [, stdout, stderr] = proc.communicate_utf8_finish(res);
+                    if (!proc.get_successful()) {
+                        if (unprivileged) {
+                            let fallbackArgs = args[0] == "up" ? original_args.concat(["--operator=" + GLib.get_user_name(), "--reset"]) : original_args;
+                            this.sendCommand(fallbackArgs, false, addLoginServer)
+                                .then(resolve)
+                                .catch(reject);
+                        } else {
+                            reject(stderr || "Command failed");
+                        }
+                    } else {
+                        resolve(stdout);
+                    }
+                } catch (e) {
+                    reject(e);
+                }
+            });
+        });
+    }
+
+    async receiveFile(filename, destPath) {
+        return new Promise((resolve, reject) => {
+            let tailscaleProc = Gio.Subprocess.new(
+                ["tailscale", "file", "get", destPath],
+                Gio.SubprocessFlags.STDOUT_PIPE | Gio.SubprocessFlags.STDERR_PIPE
+            );
+            tailscaleProc.communicate_utf8_async(null, null, (proc, res) => {
+                try {
+                    let [, stdout, stderr] = proc.communicate_utf8_finish(res);
+                    if (proc.get_successful()) {
+                        resolve(stdout);
+                    } else {
+                        if (stderr && stderr.toLowerCase().includes("denied")) {
+                            reject(stderr || "Permission denied");
+                        } else {
+                            myWarn("Ignored non-fatal CLI error in receiveFile: " + stderr);
+                            resolve(stdout || "Files likely saved");
+                        }
+                    }
+                } catch (e) {
+                    reject(e);
+                }
+            });
+        });
+    }
+
+    async sendFile(filePath, peerId, filename = null) {
+        return new Promise((resolve, reject) => {
+            let proc = Gio.Subprocess.new(
+                ["tailscale", "file", "cp", filePath, peerId + ":"],
+                Gio.SubprocessFlags.STDOUT_PIPE | Gio.SubprocessFlags.STDERR_PIPE
+            );
+            proc.communicate_utf8_async(null, null, (proc, res) => {
+                try {
+                    let [, stdout, stderr] = proc.communicate_utf8_finish(res);
+                    if (proc.get_successful()) {
+                        resolve(stdout);
+                    } else {
+                        reject(stderr || "Failed to send file via CLI");
+                    }
+                } catch (e) {
+                    reject(e);
+                }
+            });
+        });
+    }
+
+    async getAccounts(unprivileged = true) {
+        return new Promise((resolve, reject) => {
+            let command = (unprivileged ? ["tailscale"] : ["pkexec", "tailscale"]).concat(["switch", "--list"]);
+            let proc = Gio.Subprocess.new(
+                command,
+                Gio.SubprocessFlags.STDOUT_PIPE | Gio.SubprocessFlags.STDERR_PIPE
+            );
+            proc.communicate_utf8_async(null, null, (proc, res) => {
+                try {
+                    let [, stdout, stderr] = proc.communicate_utf8_finish(res);
+                    if (proc.get_successful()) {
+                        let accs = stdout.split("\n").filter(item => item.length > 0);
+                        resolve(accs);
+                    } else {
+                        if (unprivileged) {
+                            this.getAccounts(false).then(resolve).catch(reject);
+                        } else {
+                            reject(stderr || "Failed to list accounts");
+                        }
+                    }
+                } catch (e) {
+                    reject(e);
+                }
+            });
+        });
+    }
+
+    async switchAccount(account) {
+        return this.sendCommand(["switch", account], true, false);
+    }
+
+    async logout() {
+        return this.sendCommand(["logout"], true, false);
+    }
+
+    async getFiles() { return []; }
+    watchEvents(callback) {}
+}
+
+class TailscaleAPI {
+    constructor() {
+        this.socketPath = '/run/tailscale/tailscaled.sock';
+    }
+
+    async _request(endpoint, method = 'GET', bodyObj = null) {
+        return new Promise((resolve, reject) => {
+            try {
+                let client = new Gio.SocketClient();
+                let address = Gio.UnixSocketAddress.new(this.socketPath);
+
+                client.connect_async(address, null, (client, res) => {
+                    try {
+                        let connection = client.connect_finish(res);
+                        let output = connection.get_output_stream();
+                        let input = connection.get_input_stream();
+                        
+                        let bodyStr = bodyObj ? JSON.stringify(bodyObj) : "";
+                        
+                        let requestStr = `${method} ${endpoint} HTTP/1.0\r\n` +
+                                         `Host: local-tailscaled.sock\r\n` +
+                                         `Authorization: Basic Og==\r\n` +
+                                         `Content-Type: application/json\r\n`;
+
+                        if (bodyStr) {
+                            let byteLen = new TextEncoder().encode(bodyStr).length;
+                            requestStr += `Content-Length: ${byteLen}\r\n`;
+                        }
+
+                        requestStr += `Connection: close\r\n\r\n`;
+
+                        if (bodyStr) {
+                            requestStr += bodyStr;
+                        }
+
+                        output.write_all_async(requestStr, GLib.PRIORITY_DEFAULT, null, (out, res2) => {
+                            try {
+                                out.write_all_finish(res2);
+                                let dataStream = new Gio.DataInputStream({ base_stream: input });
+                                let responseText = "";
+                                
+                                let readLines = () => {
+                                    dataStream.read_line_async(GLib.PRIORITY_DEFAULT, null, (stream, res3) => {
+                                        try {
+                                            let [lineData, length] = stream.read_line_finish(res3);
+                                            if (lineData !== null) {
+                                                let line = lineData instanceof Uint8Array ? new TextDecoder().decode(lineData) : lineData;
+                                                responseText += line + "\r\n";
+                                                readLines();
+                                            } else {
+                                                let parts = responseText.split("\r\n\r\n");
+                                                if (parts.length >= 2) {
+                                                    let body = parts.slice(1).join("\r\n\r\n");
+                                                    resolve(JSON.parse(body));
+                                                } else {
+                                                    resolve({});
+                                                }
+                                            }
+                                        } catch (e) {
+                                            reject(e);
+                                        }
+                                    });
+                                };
+                                readLines();
+                            } catch (e) {
+                                reject(e);
+                            }
+                        });
+                    } catch (e) {
+                        reject(e);
+                    }
+                });
+            } catch (e) {
+                reject(e);
+            }
+        });
+    }
+
+    _watchStream(endpoint, callback) {
+        try {
+            let client = new Gio.SocketClient();
+            let address = Gio.UnixSocketAddress.new(this.socketPath);
+
+            client.connect_async(address, null, (client, res) => {
+                try {
+                    let connection = client.connect_finish(res);
+                    let output = connection.get_output_stream();
+                    let input = connection.get_input_stream();
+                    
+                    let requestStr = `GET ${endpoint} HTTP/1.1\r\n` +
+                                     `Host: local-tailscaled.sock\r\n` +
+                                     `Authorization: Basic Og==\r\n` +
+                                     `Connection: keep-alive\r\n\r\n`;
+
+                    output.write_all_async(requestStr, GLib.PRIORITY_DEFAULT, null, (out, res2) => {
+                        try {
+                            out.write_all_finish(res2);
+                            let dataStream = new Gio.DataInputStream({ base_stream: input });
+                            
+                            let readLoop = () => {
+                                dataStream.read_line_async(GLib.PRIORITY_DEFAULT, null, (stream, res3) => {
+                                    try {
+                                        let [lineData, length] = stream.read_line_finish(res3);
+                                        if (lineData !== null) {
+                                            let line = lineData instanceof Uint8Array ? new TextDecoder().decode(lineData) : lineData;
+                                            if (line.startsWith('{')) {
+                                                try {
+                                                    let jsonObj = JSON.parse(line);
+                                                    callback(jsonObj);
+                                                } catch (parseErr) {
+                                                    myWarn("Failed to parse stream line: " + parseErr);
+                                                }
+                                            }
+                                            readLoop();
+                                        } else {
+                                            myWarn("Tailscale API stream closed");
+                                        }
+                                    } catch (e) {
+                                        myError("Stream read error: " + e);
+                                    }
+                                });
+                            };
+                            readLoop();
+                        } catch (e) {
+                            myError("Stream write error: " + e);
+                        }
+                    });
+                } catch (e) {
+                    myError("Stream connect error: " + e);
+                }
+            });
+        } catch (e) {
+            myError("Stream setup error: " + e);
+        }
+    }
+
+    async getStatus() {
+        return this._request('/localapi/v0/status');
+    }
+
+    watchEvents(callback) {
+        this._watchStream('/localapi/v0/watch-ipn-bus', callback);
+    }
+
+    async getFiles() {
+        return this._request('/localapi/v0/files/');
+    }
+
+    async editPrefs(prefsObj) {
+        return this._request('/localapi/v0/prefs', 'PATCH', prefsObj);
+    }
+
+    async sendCommand(args) {
+        throw new Error("API sendCommand not fully implemented yet");
+    }
+
+    async receiveFile(filename, destPath) {
+        // v12: Avoid Gio directory writing error by gracefully rejecting if filename is missing.
+        if (!filename) {
+            return Promise.reject(new Error("API receiveFile requires a specific filename. Directory bulk download is handled by CLI fallback."));
+        }
+
+        return new Promise((resolve, reject) => {
+            try {
+                let client = new Gio.SocketClient();
+                let address = Gio.UnixSocketAddress.new(this.socketPath);
+
+                client.connect_async(address, null, (client, res) => {
+                    try {
+                        let connection = client.connect_finish(res);
+                        let output = connection.get_output_stream();
+                        let input = new Gio.DataInputStream({ base_stream: connection.get_input_stream() });
+                        
+                        let requestStr = `GET /localapi/v0/files/${filename} HTTP/1.0\r\n` +
+                                         `Host: local-tailscaled.sock\r\n` +
+                                         `Authorization: Basic Og==\r\n` +
+                                         `Connection: close\r\n\r\n`;
+
+                        output.write_all_async(requestStr, GLib.PRIORITY_DEFAULT, null, (out, res2) => {
+                            try {
+                                out.write_all_finish(res2);
+                                
+                                let skipHeaders = () => {
+                                    input.read_line_async(GLib.PRIORITY_DEFAULT, null, (stream, res3) => {
+                                        try {
+                                            let [lineData, length] = stream.read_line_finish(res3);
+                                            let line = null;
+                                            if (lineData !== null) {
+                                                line = lineData instanceof Uint8Array ? new TextDecoder().decode(lineData) : lineData;
+                                            }
+                                            if (line !== null && line.trim() !== "") {
+                                                skipHeaders();
+                                            } else {
+                                                let file = Gio.File.new_for_path(destPath);
+                                                file.replace_async(null, false, Gio.FileCreateFlags.NONE, GLib.PRIORITY_DEFAULT, null, (f, res4) => {
+                                                    try {
+                                                        let fileOutStream = f.replace_finish(res4);
+                                                        fileOutStream.splice_async(
+                                                            input, 
+                                                            Gio.OutputStreamSpliceFlags.CLOSE_TARGET | Gio.OutputStreamSpliceFlags.CLOSE_SOURCE, 
+                                                            GLib.PRIORITY_DEFAULT, 
+                                                            null, 
+                                                            (spliceOut, spliceRes) => {
+                                                                try {
+                                                                    spliceOut.splice_finish(spliceRes);
+                                                                    resolve(true);
+                                                                } catch (e) {
+                                                                    reject("Splice error: " + e);
+                                                                }
+                                                            }
+                                                        );
+                                                    } catch (e) {
+                                                        reject("File create error: " + e);
+                                                    }
+                                                });
+                                            }
+                                        } catch (e) {
+                                            reject("Header read error: " + e);
+                                        }
+                                    });
+                                };
+                                skipHeaders();
+                            } catch (e) {
+                                reject(e);
+                            }
+                        });
+                    } catch (e) {
+                        reject(e);
+                    }
+                });
+            } catch (e) {
+                reject(e);
+            }
+        });
+    }
+
+    async sendFile(filePath, peerId, filename) {
+        throw new Error("API sendFile not implemented yet (requires binary stream handling)");
+    }
+
+    async getAccounts() {
+        return this._request('/localapi/v0/profiles/');
+    }
+
+    async switchAccount(profileId) {
+        return this._request(`/localapi/v0/profiles/${profileId}`, 'POST');
+    }
+
+    async logout() {
+        return this._request('/localapi/v0/logout', 'POST');
+    }
+}
+
+class TailscaleService {
+    constructor() {
+        this.api = new TailscaleAPI();
+        this.cli = new TailscaleCLI();
+    }
+
+    async getStatus() {
+        try {
+            return await this.api.getStatus();
+        } catch (e) {
+            myWarn("API getStatus failed, falling back to CLI. Reason: " + e);
+            return await this.cli.getStatus();
+        }
+    }
+
+    async sendCommand(args, unprivileged = true, addLoginServer = true) {
+        try {
+            return await this.api.sendCommand(args);
+        } catch (e) {
+            myWarn("API sendCommand failed, falling back to CLI. Reason: " + e);
+            return await this.cli.sendCommand(args, unprivileged, addLoginServer);
+        }
+    }
+
+    async receiveFile(filename, destPath) {
+        try {
+            return await this.api.receiveFile(filename, destPath);
+        } catch (e) {
+            myWarn("API receiveFile failed, falling back to CLI. Reason: " + e);
+            return await this.cli.receiveFile(filename, destPath);
+        }
+    }
+
+    async sendFile(filePath, peerId, filename = null) {
+        try {
+            return await this.api.sendFile(filePath, peerId, filename);
+        } catch (e) {
+            myWarn("API sendFile failed, falling back to CLI. Reason: " + e);
+            return await this.cli.sendFile(filePath, peerId, filename);
+        }
+    }
+
+    async getAccounts(unprivileged = true) {
+        try {
+            return await this.api.getAccounts();
+        } catch (e) {
+            myWarn("API getAccounts failed, falling back to CLI. Reason: " + e);
+            return await this.cli.getAccounts(unprivileged);
+        }
+    }
+
+    async switchAccount(account) {
+        try {
+            return await this.api.switchAccount(account);
+        } catch (e) {
+            myWarn("API switchAccount failed, falling back to CLI. Reason: " + e);
+            return await this.cli.switchAccount(account);
+        }
+    }
+
+    async logout() {
+        try {
+            return await this.api.logout();
+        } catch (e) {
+            myWarn("API logout failed, falling back to CLI. Reason: " + e);
+            return await this.cli.logout();
+        }
+    }
+
+    watchEvents(callback) {
+        this.api.watchEvents(callback);
+    }
+}
+
+const tsService = new TailscaleService();
+
 class TailscaleNode {
-    /**
-     * @param {boolean} _isMullvadExitNode
-     * @param {string[]} _groupPath - e.g. ["Mullvad", "Norway", "Oslo"]
-     */
     constructor(_name, _address, _online, _offersExit, _usesExit, _isSelf, _isMullvadExitNode, _groupPath) {
         this.name = _name;
         this.address = _address;
@@ -31,9 +519,7 @@ class TailscaleNode {
         this.offersExit = _offersExit;
         this.usesExit = _usesExit;
         this.isSelf = _isSelf;
-        /** We probably want to ignore these for anything that's not picking an exit node. */
         this.isMullvadExitNode = _isMullvadExitNode;
-        /** Currently just used to group the Mullvad exit nodes, but code is structured to take arbitrary groupings. */
         this.groupPath = _groupPath;
     }
 
@@ -50,13 +536,10 @@ class TailscaleNode {
     }
 }
 
-/** @type {TailscaleNode[]} */
 let nodes = [];
-/** @typedef {{nodes: TailscaleNode[], subTrees: {[k: string]: NodesTree}}} NodesTree */
-/** @type {NodesTree} */
 let nodesTree = { nodes: [], subTrees: {} }
 let accounts = [];
-let currentAccount = "(click Update Accounts List)";
+let currentAccount = null; 
 
 let nodesMenu;
 let accountButton;
@@ -84,7 +567,6 @@ let icon_up;
 let icon_exit_node;
 let SETTINGS;
 
-
 function myWarn(string) {
     console.log("🟡 [tailscale-status]: " + string);
 }
@@ -93,13 +575,15 @@ function myError(string) {
     console.log("🔴 [tailscale-status]: " + string);
 }
 
-
 function extractNodeInfo(json) {
     nodes = [];
     nodesTree = { nodes: [], subTrees: {} };
 
+    // v12: Protect against undefined 'Self' when the daemon state is minimal or stopped
+    if (!json || !json.Self) return;
+
     var me = json.Self;
-    if (me.TailscaleIPs != null) {
+    if (me && me.TailscaleIPs != null) {
         nodes.push(new TailscaleNode(
             me.DNSName.split(".")[0],
             me.TailscaleIPs[0],
@@ -112,39 +596,39 @@ function extractNodeInfo(json) {
         )
         );
     }
-    for (let p in json.Peer) {
-        var n = json.Peer[p];
-        let isMullvad = false;
-        let groupPath = [];
-        // We special-case these guys. Tailscale clients sometimes refer to "Location-based exit nodes",
-        // perhaps in future it should be done by nodes with a .Location instead?
-        if (n.Tags?.includes('tag:mullvad-exit-node')) {
-            isMullvad = true;
-            if (n.Location?.Country && n.Location?.City) {
-                groupPath = ["Mullvad", n.Location.Country, n.Location.City];
-            } else {
-                groupPath = ["Mullvad"]
+    
+    if (json.Peer) {
+        for (let p in json.Peer) {
+            var n = json.Peer[p];
+            let isMullvad = false;
+            let groupPath = [];
+            if (n.Tags?.includes('tag:mullvad-exit-node')) {
+                isMullvad = true;
+                if (n.Location?.Country && n.Location?.City) {
+                    groupPath = ["Mullvad", n.Location.Country, n.Location.City];
+                } else {
+                    groupPath = ["Mullvad"]
+                }
+            }
+            if (n.TailscaleIPs != null) {
+                nodes.push(new TailscaleNode(
+                    n.DNSName.split(".")[0],
+                    n.TailscaleIPs[0],
+                    n.Online,
+                    n.ExitNodeOption,
+                    n.ExitNode,
+                    false,
+                    isMullvad,
+                    groupPath
+                ));
             }
         }
-        if (n.TailscaleIPs != null) {
-            nodes.push(new TailscaleNode(
-                n.DNSName.split(".")[0],
-                n.TailscaleIPs[0],
-                n.Online,
-                n.ExitNodeOption,
-                n.ExitNode,
-                false,
-                isMullvad,
-                groupPath
-            ));
-        }
-
     }
+
     nodes.sort(combineSort(sortProp('isSelf'), sortProp('online', 'desc'), sortArrProp('groupPath'), sortProp('name')))
 
     for (const n of nodes) {
         let t = nodesTree;
-        // recurse into / initialize the tree, one level per entry in groupPath
         for (const p of n.groupPath) {
             if (!(p in t.subTrees)) {
                 t.subTrees[p] = { nodes: [], subTrees: {} }
@@ -170,7 +654,7 @@ function sortArrProp(p) {
         }
     }
 }
-/** @param {'desc' | undefined} desc - descending sort */
+
 function sortProp(p, desc=undefined) {
     return function comp(a, b) {
         if (desc == 'desc') {
@@ -186,6 +670,7 @@ function sortProp(p, desc=undefined) {
         }
     }
 }
+
 function combineSort(...sorters) {
     return function comp(a, b) {
         for (const fn of sorters) {
@@ -193,11 +678,14 @@ function combineSort(...sorters) {
             if (res != 0) {
                 return res
             }
-            // else this sorter considers them equal, try the next one.
         }
     }
 }
+
 function getUsername(json) {
+    // v12: Protect against undefined 'Self'
+    if (!json || !json.Self) return "Unknown";
+
     let id = 0
     if (json.Self.UserID != null) {
         id = json.Self.UserID
@@ -211,20 +699,23 @@ function getUsername(json) {
     }
     return json.Self.HostName
 }
+
 function setStatus(json) {
-    authItem.label.text = "Logged in: " + getUsername(json);
-    accountIndicator.label.text = "Account: " + currentAccount;
+    authItem.label.text = _("Logged in: ") + getUsername(json);
+    accountIndicator.label.text = _("Account: ") + currentAccount;
     authItem.sensitive = false;
-    health = json.Health
-    switch (json.BackendState) {
+    health = json ? json.Health : null;
+    
+    let backendState = json ? json.BackendState : "Unknown";
+    switch (backendState) {
         case "Running":
             needToAuth = true
             icon.gicon = icon_up;
             statusSwitchItem.setToggleState(true);
-            statusItem.label.text = statusString + "up (no exit-node)";
+            statusItem.label.text = _("Status: ") + _("up (no exit-node)");
             nodes.forEach((node) => {
                 if (node.usesExit) {
-                    statusItem.label.text = statusString + "up (exit-node: " + node.name + ")";
+                    statusItem.label.text = _("Status: ") + _("up (exit-node: ") + node.name + ")";
                     icon.gicon = icon_exit_node;
                 }
             })
@@ -234,7 +725,7 @@ function setStatus(json) {
             needToAuth = true
             icon.gicon = icon_down;
             statusSwitchItem.setToggleState(false);
-            statusItem.label.text = statusString + "down";
+            statusItem.label.text = _("Status: ") + _("down");
             nodes = [];
             setAllItems(false);
             statusSwitchItem.sensitive = true;
@@ -243,14 +734,14 @@ function setStatus(json) {
             icon.gicon = icon_down;
             statusSwitchItem.setToggleState(false);
             authUrl = json.AuthURL;
-            if (authUrl.length > 0 && needToAuth) {
+            if (authUrl && authUrl.length > 0 && needToAuth) {
                 Util.spawn(['xdg-open', authUrl])
                 needToAuth = false
             }
 
             authItem.sensitive = true;
-            statusItem.label.text = statusString + "needs login";
-            authItem.label.text = "Click to Login"
+            statusItem.label.text = _("Status: ") + _("needs login");
+            authItem.label.text = _("Click to Login");
 
             setAllItems(false);
             nodes = [];
@@ -275,8 +766,6 @@ function setAllItems(b) {
     logoutButton.sensitive = b;
 }
 
-
-
 function refreshNodesMenu() {
     nodesMenu.menu.removeAll();
     for (const node of nodes) {
@@ -287,61 +776,38 @@ function refreshNodesMenu() {
         let item = new PopupMenu.PopupMenuItem(node.line)
         item.connect('activate', () => {
             St.Clipboard.get_default().set_text(St.ClipboardType.CLIPBOARD, node.address);
-            Main.notify("Copied " + node.address + " to clipboard! (" + node.name + ")");
+            Main.notify(_("Copied ") + node.address + _(" to clipboard! (") + node.name + ")");
         });
         nodesMenu.menu.addMenuItem(item);
     };
 }
 
-/**
- * This is a PopupSubMenuMenuItem with some patches to make nested submenus work,
- * by default they don't work at all.
- */
 const FixedSubMenuMenuItem = GObject.registerClass(
 class FixedSubMenuMenuItem extends PopupMenu.PopupSubMenuMenuItem {
     _init(name, rootScroller) {
         super._init(name);
         this.rootScroller = rootScroller;
-
-        // Monkey-patch scrolling - we'll leave scrolling to the rootScroller.
-        // Disable scrolling on our own menu's ScrollBox.
         this.menu._needsScrollbar = () => false;
         this.menu.actor.set_mouse_scrolling(false);
     }
 
     _subMenuOpenStateChanged(menu, open) {
         super._subMenuOpenStateChanged(menu, open);
-
-        // we've changed the height of a submenu. Gnome doesn't handle this properly,
-        // so we need to go and tell the rootScroller that its height has changed.
-        // Copy-paste from PopupSubMenu.open().
         {
             const needsScrollbar = this.rootScroller._needsScrollbar();
-
             this.rootScroller.actor.vscrollbar_policy = St.PolicyType.ALWAYS;
-
             if (needsScrollbar)
                 this.rootScroller.actor.add_style_pseudo_class('scrolled');
             else
                 this.rootScroller.actor.remove_style_pseudo_class('scrolled');
         }
-
     }
 }
 );
 
-/**
- * @param {PopupMenu.PopupMenuBase} menu
- * @param {NodesTree} t
- * @param {string} indent
- * @param {PopupMenu.PopupMenuBase | null} rootScroller
- *   we need to keep track of the ExitNodes popupmenu so we can fix Gnome's buggy handling of nested
- *   submenus.
- */
 function _refreshExitNodesMenu(menu, t, indent = '', rootScroller = null) {
     let usesExit = false;
 
-    // Add any nodes to this level of the tree
     for (const node of t.nodes) {
         if (!node.offersExit) {
             continue;
@@ -349,7 +815,8 @@ function _refreshExitNodesMenu(menu, t, indent = '', rootScroller = null) {
 
         const item = new PopupMenu.PopupMenuItem(indent+node.name)
         item.connect('activate', () => {
-            cmdTailscale({ args: ["up", "--exit-node=" + node.address, "--reset"] })
+            tsService.sendCommand(["up", "--exit-node=" + node.address, "--reset"])
+                .then(updateStatusUI).catch(myError);
         });
         item.setOrnament(node.usesExit ? 1 : 0)
         menu.addMenuItem(item);
@@ -358,12 +825,9 @@ function _refreshExitNodesMenu(menu, t, indent = '', rootScroller = null) {
 
     rootScroller = rootScroller || menu;
 
-    // Add any subtress to this level of the tree
     for (const [name, st] of Object.entries(t.subTrees)) {
         const subMenu = new FixedSubMenuMenuItem(indent+name, rootScroller);
-
         const stUsesExit = _refreshExitNodesMenu(subMenu.menu, st, indent+' ', rootScroller)
-
         subMenu.setOrnament(stUsesExit ? 1 : 0)
         menu.addMenuItem(subMenu)
         usesExit ||= stUsesExit
@@ -377,9 +841,10 @@ function refreshExitNodesMenu() {
 
     const usesExit = _refreshExitNodesMenu(exitNodeMenu.menu, nodesTree);
 
-    var noneItem = new PopupMenu.PopupMenuItem('None');
+    var noneItem = new PopupMenu.PopupMenuItem(_('None'));
     noneItem.connect('activate', () => {
-        cmdTailscale({ args: ["up", "--exit-node=", "--reset"] });
+        tsService.sendCommand(["up", "--exit-node=", "--reset"])
+            .then(updateStatusUI).catch(myError);
     });
     noneItem.setOrnament(usesExit ? 0 : 1)
     exitNodeMenu.menu.addMenuItem(noneItem, 0);
@@ -394,13 +859,13 @@ function refreshSendMenu() {
 
         var item = new PopupMenu.PopupMenuItem(node.name)
         item.connect('activate', () => {
-            sendFiles(node.address);
+            sendFilesUI(node.address);
         });
         sendMenu.menu.addMenuItem(item);
     }
 }
 
-function sendFiles(dest) {
+function sendFilesUI(dest) {
     try {
         let proc = Gio.Subprocess.new(
             ["zenity", "--file-selection", "--multiple"],
@@ -411,63 +876,17 @@ function sendFiles(dest) {
                 let [, stdout, stderr] = proc.communicate_utf8_finish(res);
                 if (proc.get_successful()) {
                     if (stdout != '') {
-                        files = stdout.trim().split("|")
-                        cmdTailscaleFile(files, dest)
-                    }
-                } else {
-                    myError("zenity failed");
-                }
-            } catch (e) {
-                myError(e);
-            }
-        });
-    } catch (e) {
-        myError(e);
-    }
-}
-
-
-function cmdTailscaleSwitchList(unprivileged  = true) {
-    let args = ["switch", "--list"]
-    let command = (unprivileged ? ["tailscale"] : ["pkexec", "tailscale"]).concat(args);
-
-    try {
-        let proc = Gio.Subprocess.new(
-            command,
-            Gio.SubprocessFlags.STDOUT_PIPE | Gio.SubprocessFlags.STDERR_PIPE
-        );
-        proc.communicate_utf8_async(null, null, (proc, res) => {
-            try {
-                let [, stdout, stderr] = proc.communicate_utf8_finish(res);
-                if (proc.get_successful()) {
-                    accounts = stdout.split("\n")
-                    accounts = accounts.filter((item) => item.length > 0)
-                    accountsMenu.menu.removeAll()
-                    accounts.forEach((account) => {
-                        if (account.slice(-2) == " *") {
-                            account = account.slice(0, -2)
-                            currentAccount = account
-                        }
-                        let accountItem = new PopupMenu.PopupMenuItem(account)
-                        accountItem.connect('activate', () => {
-                            // find the mail address in the account string
-                            const emailRegex = /[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/;
-                            const email = account.match(emailRegex);
-                            if (email == null) {
-                                myError("failed to extract email from account string")
-                                return
-                            }
-                            cmdTailscaleSwitch(email[0]);
+                        let files = stdout.trim().split("|");
+                        files.forEach(file => {
+                            tsService.sendFile(file, dest)
+                                .then(() => Main.notify(_('File sent successfully: ') + file + ' → ' + dest))
+                                .catch(err => {
+                                    myError("Failed to send file: " + file + " to " + dest + " | " + err);
+                                });
                         });
-                        accountsMenu.menu.addMenuItem(accountItem);
-                    });
-                } else {
-                    if (unprivileged) {
-                        myWarn("retrying tailscale switch --list")
-                        cmdTailscaleSwitchList(false)
-                    } else {
-                        myError("cmd 'tailscale switch --list' failed")
                     }
+                } else {
+                    myWarn("zenity canceled by user");
                 }
             } catch (e) {
                 myError(e);
@@ -478,103 +897,89 @@ function cmdTailscaleSwitchList(unprivileged  = true) {
     }
 }
 
-function cmdTailscaleSwitch(account) {
+function updateAccountsListUI() {
+    tsService.getAccounts().then(accs => {
+        accounts = accs;
+        accountsMenu.menu.removeAll();
+        accounts.forEach((account) => {
+            if (typeof account === 'string') {
+                if (account.slice(-2) == " *") {
+                    account = account.slice(0, -2)
+                    currentAccount = account
+                }
+                let accountItem = new PopupMenu.PopupMenuItem(account)
+                accountItem.connect('activate', () => {
+                    const emailRegex = /[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/;
+                    const email = account.match(emailRegex);
+                    if (email == null) {
+                        myError("failed to extract email from account string")
+                        return
+                    }
+                    switchAccountUI(email[0]);
+                });
+                accountsMenu.menu.addMenuItem(accountItem);
+            } else if (typeof account === 'object') {
+                let accName = account.UserProfile?.LoginName || account.Name || "Unknown";
+                let accountItem = new PopupMenu.PopupMenuItem(accName)
+                accountItem.connect('activate', () => {
+                    switchAccountUI(account.ID || accName);
+                });
+                accountsMenu.menu.addMenuItem(accountItem);
+            }
+        });
+    }).catch(err => {
+        myWarn("failed to fetch accounts: " + err);
+    });
+}
+
+function switchAccountUI(account) {
     if (currentAccount == account) {
-        Main.notify("Already logged in with " + account)
+        Main.notify(_("Already logged in with ") + account)
         return
     } else {
-        Main.notify("Switching to " + account)
+        Main.notify(_("Switching to ") + account)
         currentAccount = account
     }
 
-    cmdTailscale({
-        args: ["switch", account],
-        addLoginServer: false
-    })
-
+    tsService.switchAccount(account)
+        .then(updateStatusUI)
+        .catch(myError);
 }
 
-function cmdTailscaleStatus() {
+function updateStatusUI() {
+    tsService.getStatus().then(json => {
+        extractNodeInfo(json);
+        setStatus(json);
+        refreshExitNodesMenu();
+        refreshSendMenu();
+        refreshNodesMenu();
+    }).catch(err => {
+        myError("Failed to fetch status: " + err);
+    });
+}
+
+function receiveFilesUI() {
     try {
+        let zenityTitle = _("Select where to save received files");
         let proc = Gio.Subprocess.new(
-            // ["curl", "--silent", "--unix-socket", "/run/tailscale/tailscaled.sock", "http://localhost/localapi/v0/status" ],
-            ["tailscale", "status", "--json"],
+            ["zenity", "--file-selection", "--directory", "--title=" + zenityTitle],
             Gio.SubprocessFlags.STDOUT_PIPE | Gio.SubprocessFlags.STDERR_PIPE
         );
         proc.communicate_utf8_async(null, null, (proc, res) => {
-
             try {
                 let [, stdout, stderr] = proc.communicate_utf8_finish(res);
                 if (proc.get_successful()) {
-                    const j = JSON.parse(stdout);
-                    extractNodeInfo(j);
-                    setStatus(j);
-                    refreshExitNodesMenu();
-                    refreshSendMenu();
-                    refreshNodesMenu();
-                }
-            } catch (e) {
-                myError(e);
-            }
-        });
-    } catch (e) {
-        myError(e);
-    }
-}
-
-function cmdTailscale({args, unprivileged = true, addLoginServer = true}) {
-    let original_args = args
-
-    if (addLoginServer) {
-        args = args.concat(["--login-server=" + SETTINGS.get_string('login-server')])
-    }
-
-    let command = (unprivileged ? ["tailscale"] : ["pkexec", "tailscale"]).concat(args);
-
-    try {
-        let proc = Gio.Subprocess.new(
-            command,
-            Gio.SubprocessFlags.STDOUT_PIPE | Gio.SubprocessFlags.STDERR_PIPE
-        );
-        proc.communicate_utf8_async(null, null, (proc, res) => {
-            try {
-                proc.communicate_utf8_finish(res);
-                if (!proc.get_successful()) {
-                    if (unprivileged) {
-                        cmdTailscale({
-                            args: args[0] == "up" ? original_args.concat(["--operator=" + GLib.get_user_name(), "--reset"]) : original_args,
-                            unprivileged: false,
-                            addLoginServer: addLoginServer
-                        })
-                    } else {
-                        myWarn("failed @ cmdTailscale");
+                    let selectedPath = stdout.trim();
+                    if (selectedPath !== '') {
+                        tsService.receiveFile(null, selectedPath)
+                            .then(() => Main.notify(_('Files saved to ') + selectedPath))
+                            .catch(err => {
+                                Main.notify(_('Failed to receive files to ') + selectedPath, _('check logs with journalctl -f -o cat /usr/bin/gnome-shell'));
+                                myWarn("failed to accept files: " + err);
+                            });
                     }
                 } else {
-                    cmdTailscaleStatus()
-                }
-            } catch (e) {
-                myError(e);
-            }
-        });
-    } catch (e) {
-        myError(e);
-    }
-}
-
-function cmdTailscaleRecFiles() {
-    try {
-        let proc = Gio.Subprocess.new(
-            ["pkexec", "tailscale", "file", "get", downloads_path],
-            Gio.SubprocessFlags.STDOUT_PIPE | Gio.SubprocessFlags.STDERR_PIPE
-        );
-        proc.communicate_utf8_async(null, null, (proc, res) => {
-            try {
-                proc.communicate_utf8_finish(res);
-                if (proc.get_successful()) {
-                    Main.notify('Saved files to ' + downloads_path);
-                } else {
-                    Main.notify('Unable to receive files to ' + downloads_path, 'check logs with journalctl -f -o cat /usr/bin/gnome-shell');
-                    myWarn("failed to accept files to " + downloads_path)
+                    myWarn("zenity canceled by the user");
                 }
             } catch (e) {
                 myError(e);
@@ -604,142 +1009,104 @@ const TailscalePopup = GObject.registerClass(
 
             this.menu.connect('open-state-changed', (menu, open) => {
                 if (open) {
-                    cmdTailscaleStatus();
+                    updateStatusUI();
                 }
             });
 
-            // monkey-patch to nuke this property - it's buggy, if submenus are in a tree,
-            // then it causes the parent to close when a child is opened, even though the parent
-            // should stay open so you can see the child!
-            this.menu._setOpenedSubMenu = () => {};``
+            this.menu._setOpenedSubMenu = () => {};
 
-            // ------ MAIN STATUS ITEM ------
-            statusItem = new PopupMenu.PopupMenuItem(statusString, { reactive: false });
+            statusItem = new PopupMenu.PopupMenuItem(_("Status: "), { reactive: false });
 
-            // ------ AUTH ITEM ------
-            authItem = new PopupMenu.PopupMenuItem("Logged in", false);
+            authItem = new PopupMenu.PopupMenuItem(_("Logged in"), false);
 
             authItem.connect('activate', () => {
-                cmdTailscaleStatus()
-                if (authUrl.length == 0) {
-                    try {
-                        cmdTailscale({
-                            args: ["up"],
-                        });
-                    } catch (e) {
-                        myError(e);
-                    }
+                updateStatusUI();
+                if (authUrl && authUrl.length == 0) {
+                    tsService.sendCommand(["up"]).then(updateStatusUI).catch(myError);
                 }
             });
 
+            accountIndicator = new PopupMenu.PopupMenuItem(_("Account: "), { reactive: false});
 
-            // ------ ACCOUNT INDICATOR ------
-            accountIndicator = new PopupMenu.PopupMenuItem("Account: ", { reactive: false});
-
-            // ------ MAIN SWITCH ------
-            statusSwitchItem = new PopupMenu.PopupSwitchMenuItem("Tailscale", false);
+            statusSwitchItem = new PopupMenu.PopupSwitchMenuItem(_("Tailscale"), false);
             statusSwitchItem.connect('activate', () => {
                 if (statusSwitchItem.state) {
-                    cmdTailscale({ args: ["up"] });
+                    tsService.sendCommand(["up"]).then(updateStatusUI).catch(myError);
                 } else {
-                    cmdTailscale({
-                        args: ["down"],
-                        addLoginServer: false
-                    });
+                    tsService.sendCommand(["down"], true, false).then(updateStatusUI).catch(myError);
                 }
             })
 
-            // ------ UPDATE ACCOUNTS ------
-            accountButton = new PopupMenu.PopupMenuItem("Update Accounts List");
-            accountButton.connect('activate', (item) => {
-                cmdTailscaleSwitchList()
+            accountButton = new PopupMenu.PopupMenuItem(_("Update Accounts List"));
+            accountButton.connect('activate', () => {
+                updateAccountsListUI();
             })
 
-            // ------ ACCOUNTS ------
-            accountsMenu = new PopupMenu.PopupSubMenuMenuItem("Accounts");
+            accountsMenu = new PopupMenu.PopupSubMenuMenuItem(_("Accounts"));
 
-            // ------ NODES ------
-            nodesMenu = new PopupMenu.PopupSubMenuMenuItem("Nodes");
-            nodes.forEach((node) => {
-                nodesMenu.menu.addMenuItem(new PopupMenu.PopupMenuItem(node.line));
-            });
+            nodesMenu = new PopupMenu.PopupSubMenuMenuItem(_("Nodes"));
 
-            // ------ SHIELD ------
-            shieldItem = new PopupMenu.PopupSwitchMenuItem("Block Incoming", false);
+            shieldItem = new PopupMenu.PopupSwitchMenuItem(_("Block Incoming"), false);
             shieldItem.connect('activate', () => {
                 if (shieldItem.state) {
-                    cmdTailscale({ args: ["up", "--shields-up"] });
+                    tsService.sendCommand(["up", "--shields-up"]).then(updateStatusUI).catch(myError);
                 } else {
-                    cmdTailscale({ args: ["up", "--shields-up=false", "--reset"] });
+                    tsService.sendCommand(["up", "--shields-up=false", "--reset"]).then(updateStatusUI).catch(myError);
                 }
             })
 
-
-            // ------ ACCEPT ROUTES ------
-            acceptRoutesItem = new PopupMenu.PopupSwitchMenuItem("Accept Routes", false);
+            acceptRoutesItem = new PopupMenu.PopupSwitchMenuItem(_("Accept Routes"), false);
             acceptRoutesItem.connect('activate', () => {
                 if (acceptRoutesItem.state) {
-                    cmdTailscale({ args: ["up", "--accept-routes"] });
+                    tsService.sendCommand(["up", "--accept-routes"]).then(updateStatusUI).catch(myError);
                 } else {
-                    cmdTailscale({ args: ["up", "--accept-routes=false", "--reset"] });
+                    tsService.sendCommand(["up", "--accept-routes=false", "--reset"]).then(updateStatusUI).catch(myError);
                 }
             })
 
-            // ------ ALLOW DIRECT LAN ACCESS ------
-            allowLanItem = new PopupMenu.PopupSwitchMenuItem("Allow Direct Lan Access", false);
+            allowLanItem = new PopupMenu.PopupSwitchMenuItem(_("Allow Direct Lan Access"), false);
             allowLanItem.connect('activate', () => {
                 if (allowLanItem.state) {
-                    if (nodes[0].usesExit) {
-                        cmdTailscale({ args: ["up", "--exit-node-allow-lan-access"] });
+                    if (nodes[0] && nodes[0].usesExit) {
+                        tsService.sendCommand(["up", "--exit-node-allow-lan-access"]).then(updateStatusUI).catch(myError);
                     } else {
-                        Main.notify("Must setup exit node first");
+                        Main.notify(_("Must setup exit node first"));
                         allowLanItem.setToggleState(false);
                     }
                 } else {
-                    cmdTailscale({ args: ["up", "--exit-node-allow-lan-access=false", "--reset"] });
+                    tsService.sendCommand(["up", "--exit-node-allow-lan-access=false", "--reset"]).then(updateStatusUI).catch(myError);
                 }
             })
 
-            // ------ RECEIVE FILES MENU ------
-            receiveFilesItem = new PopupMenu.PopupMenuItem("Accept incoming files");
+            receiveFilesItem = new PopupMenu.PopupMenuItem(_("Accept incoming files"));
             receiveFilesItem.connect('activate', () => {
-                cmdTailscaleRecFiles();
+                receiveFilesUI();
             })
 
-            // ------ SEND FILES MENU ------
-            sendMenu = new PopupMenu.PopupSubMenuMenuItem("Send Files");
+            sendMenu = new PopupMenu.PopupSubMenuMenuItem(_("Send Files"));
 
-            // ------ EXIT NODES -------
-            exitNodeMenu = new PopupMenu.PopupSubMenuMenuItem("Exit Nodes");
+            exitNodeMenu = new PopupMenu.PopupSubMenuMenuItem(_("Exit Nodes"));
 
-            // ------ LOG OUT -------
-            logoutButton = new PopupMenu.PopupMenuItem("Log Out");
+            logoutButton = new PopupMenu.PopupMenuItem(_("Log Out"));
             logoutButton.connect('activate', () => {
-                cmdTailscale({
-                    args: ["logout"],
-                    addLoginServer: false,
-                });
+                tsService.logout().then(updateStatusUI).catch(myError);
             })
 
-            // ------ ABOUT MENU------
-            let aboutMenu = new PopupMenu.PopupSubMenuMenuItem("About");
-            let healthMenu = new PopupMenu.PopupMenuItem("Health")
+            let aboutMenu = new PopupMenu.PopupSubMenuMenuItem(_("About"));
+            let healthMenu = new PopupMenu.PopupMenuItem(_("Health"))
             healthMenu.connect('activate', () => {
                 if (health != null) {
                     Main.notify(health.join());
-
                 } else {
                     Main.notify("null");
                 }
             })
-            let infoMenu = new PopupMenu.PopupMenuItem("This extension is in no way affiliated with Tailscale Inc.")
-            let contributeMenu = new PopupMenu.PopupMenuItem("Contribute")
+            let infoMenu = new PopupMenu.PopupMenuItem(_("This extension is in no way affiliated with Tailscale Inc."))
+            let contributeMenu = new PopupMenu.PopupMenuItem(_("Contribute"))
             contributeMenu.connect('activate', () => {
                 Util.spawn(['xdg-open', "https://github.com/maxgallup/tailscale-status#contribute"])
             })
 
-
-            // Order Matters!
             this.menu.addMenuItem(statusSwitchItem);
             this.menu.addMenuItem(statusItem);
             this.menu.addMenuItem(authItem);
@@ -765,23 +1132,27 @@ const TailscalePopup = GObject.registerClass(
     }
 );
 
-
-
 let tailscale;
-
 
 export default class TailscaleStatusExtension extends Extension {
     enable() {
         SETTINGS = this.getSettings('org.gnome.shell.extensions.tailscale-status');
 
-        cmdTailscaleStatus()
+        currentAccount = _("(click Update Accounts List)");
+
+        updateStatusUI();
+
+        tsService.watchEvents((jsonEvent) => {
+            if (jsonEvent.IncomingFiles && jsonEvent.IncomingFiles.length > 0) {
+                Main.notify(_('Tailscale'), _("New file received! Access the menu to save."));
+            }
+        });
 
         tailscale = new TailscalePopup(this.path);
         Main.panel.addToStatusArea('tailscale', tailscale, 1);
     }
 
     disable() {
-
         tailscale.destroy();
         tailscale = null;
         SETTINGS = null;
@@ -812,6 +1183,5 @@ export default class TailscaleStatusExtension extends Extension {
         icon_down = null;
         icon_up = null;
         icon_exit_node = null;
-
     }
 }

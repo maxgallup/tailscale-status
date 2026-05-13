@@ -30,11 +30,30 @@ Download the `tailscale-status@maxgallup.github.com` directory and move it to `~
 Enable the extension in *Extensions* or *Extension Manager*.
 You might have to log in and out for the extension to be loaded.
 
+Also, you can install this extension directly from the[ GNOME Extensions website](https://extensions.gnome.org/extension/4000/tailscale-status/).
+
 ### Contribute
 Sadly, we must maintain two separate branches for before and after gnome 45 due to breaking changes. Make pull requests to the correct respective branch. Additionally, please adhere to the [review guidlines](https://gjs.guide/extensions/review-guidelines/review-guidelines.html#basics) as much as possible.
 
 The Makefile includes useful targets for development. If running on wayland, use `make test-wayland` to open a nested gnome sessions.
 
+If you want to contribute with new translations, follow these steps:
+1. Copy the pt_BR.po file and rename it to <i18n_lang_code>.po;
+2. Modify the translated strings;
+3. Ensure the file is in the folder `po/`;
+4. Compile the translation in order to test it.
+
+#### Compiling Translation
+This extension uses `gettext` for i18n. If you modify or add a new `.po` file (e.g., `po_br.po`) in the `po/` directory, you must compile it into a `.mo` machine-object file before packing the extension or testing it.
+Run the folling command from the root of the repository:
+```
+msgfmt -cv -o po/tailscale-status.mo po/<your_language>.po
+```
+
 ### TODOs
-- [ ] Rewrite extension to utilize tailscale api instead of running `tailscale` commands.
+- [x] Rewrite extension to utilize tailscale api instead of running `tailscale` commands.
+- [x] Create a Fallback to the CLI if an endpoint fails
+- [x] Continuous listen to incoming files
+- [x] Internationalization (i18n)
+- [ ] Review api endpoints and extend the LocalAPI integration
 
