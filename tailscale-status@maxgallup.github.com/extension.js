@@ -349,7 +349,7 @@ function _refreshExitNodesMenu(menu, t, indent = '', rootScroller = null) {
 
         const item = new PopupMenu.PopupMenuItem(indent+node.name)
         item.connect('activate', () => {
-            cmdTailscale({ args: ["up", "--exit-node=" + node.address, "--reset"] })
+            cmdTailscale({ args: ["set", "--exit-node=" + node.address], addLoginServer: false })
         });
         item.setOrnament(node.usesExit ? 1 : 0)
         menu.addMenuItem(item);
@@ -379,7 +379,7 @@ function refreshExitNodesMenu() {
 
     var noneItem = new PopupMenu.PopupMenuItem('None');
     noneItem.connect('activate', () => {
-        cmdTailscale({ args: ["up", "--exit-node=", "--reset"] });
+        cmdTailscale({ args: ["set", "--exit-node="], addLoginServer: false });
     });
     noneItem.setOrnament(usesExit ? 0 : 1)
     exitNodeMenu.menu.addMenuItem(noneItem, 0);
@@ -523,9 +523,10 @@ function cmdTailscaleStatus() {
 }
 
 function cmdTailscale({args, unprivileged = true, addLoginServer = true}) {
-    let original_args = args
+    let original_args = args.slice()
 
-    if (addLoginServer) {
+    // `tailscale set` has no --login-server flag.
+    if (addLoginServer && args[0] !== "set") {
         args = args.concat(["--login-server=" + SETTINGS.get_string('login-server')])
     }
 
@@ -538,16 +539,21 @@ function cmdTailscale({args, unprivileged = true, addLoginServer = true}) {
         );
         proc.communicate_utf8_async(null, null, (proc, res) => {
             try {
-                proc.communicate_utf8_finish(res);
+                let [, , stderr] = proc.communicate_utf8_finish(res);
                 if (!proc.get_successful()) {
                     if (unprivileged) {
+                        // Retry the same arguments as root. Do not append
+                        // --operator or --reset: Tailscale rejects a duplicated
+                        // flag, and `set` changes only the named preference.
                         cmdTailscale({
-                            args: args[0] == "up" ? original_args.concat(["--operator=" + GLib.get_user_name(), "--reset"]) : original_args,
+                            args: original_args,
                             unprivileged: false,
                             addLoginServer: addLoginServer
                         })
                     } else {
-                        myWarn("failed @ cmdTailscale");
+                        let detail = (stderr || "").trim()
+                        myWarn("failed @ cmdTailscale: " + command.join(" ") + (detail ? " :: " + detail : ""))
+                        Main.notify("Tailscale command failed", detail.split("\n")[0] || command.join(" "))
                     }
                 } else {
                     cmdTailscaleStatus()
@@ -668,9 +674,9 @@ const TailscalePopup = GObject.registerClass(
             shieldItem = new PopupMenu.PopupSwitchMenuItem("Block Incoming", false);
             shieldItem.connect('activate', () => {
                 if (shieldItem.state) {
-                    cmdTailscale({ args: ["up", "--shields-up"] });
+                    cmdTailscale({ args: ["set", "--shields-up"], addLoginServer: false });
                 } else {
-                    cmdTailscale({ args: ["up", "--shields-up=false", "--reset"] });
+                    cmdTailscale({ args: ["set", "--shields-up=false"], addLoginServer: false });
                 }
             })
 
@@ -679,9 +685,9 @@ const TailscalePopup = GObject.registerClass(
             acceptRoutesItem = new PopupMenu.PopupSwitchMenuItem("Accept Routes", false);
             acceptRoutesItem.connect('activate', () => {
                 if (acceptRoutesItem.state) {
-                    cmdTailscale({ args: ["up", "--accept-routes"] });
+                    cmdTailscale({ args: ["set", "--accept-routes"], addLoginServer: false });
                 } else {
-                    cmdTailscale({ args: ["up", "--accept-routes=false", "--reset"] });
+                    cmdTailscale({ args: ["set", "--accept-routes=false"], addLoginServer: false });
                 }
             })
 
@@ -690,13 +696,13 @@ const TailscalePopup = GObject.registerClass(
             allowLanItem.connect('activate', () => {
                 if (allowLanItem.state) {
                     if (nodes[0].usesExit) {
-                        cmdTailscale({ args: ["up", "--exit-node-allow-lan-access"] });
+                        cmdTailscale({ args: ["set", "--exit-node-allow-lan-access"], addLoginServer: false });
                     } else {
                         Main.notify("Must setup exit node first");
                         allowLanItem.setToggleState(false);
                     }
                 } else {
-                    cmdTailscale({ args: ["up", "--exit-node-allow-lan-access=false", "--reset"] });
+                    cmdTailscale({ args: ["set", "--exit-node-allow-lan-access=false"], addLoginServer: false });
                 }
             })
 
