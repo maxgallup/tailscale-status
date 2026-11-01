@@ -56,7 +56,8 @@ let nodes = [];
 /** @type {NodesTree} */
 let nodesTree = { nodes: [], subTrees: {} }
 let accounts = [];
-let currentAccount = "(click Update Accounts List)";
+const defaultAccount = "(click Update Accounts List)";
+let currentAccount = defaultAccount;
 
 let nodesMenu;
 let accountButton;
@@ -427,6 +428,24 @@ function sendFiles(dest) {
 }
 
 
+function parseAccounts(stdout) {
+    let result = []
+    for (const line of stdout.split("\n")) {
+        const cols = line.trim().split(/\s{2,}/)
+        if (cols.length < 3 || (cols[0] == "ID" && cols[1] == "Tailnet")) {
+            continue
+        }
+        let name = cols[cols.length - 1]
+        const selected = name.endsWith("*")
+        if (selected) {
+            name = name.slice(0, -1)
+        }
+        const tailnet = cols.slice(1, -1).join("  ")
+        result.push({ id: cols[0], label: name + " (" + tailnet + ")", selected: selected })
+    }
+    return result
+}
+
 function cmdTailscaleSwitchList(unprivileged  = true) {
     let args = ["switch", "--list"]
     let command = (unprivileged ? ["tailscale"] : ["pkexec", "tailscale"]).concat(args);
@@ -440,27 +459,20 @@ function cmdTailscaleSwitchList(unprivileged  = true) {
             try {
                 let [, stdout, stderr] = proc.communicate_utf8_finish(res);
                 if (proc.get_successful()) {
-                    accounts = stdout.split("\n")
-                    accounts = accounts.filter((item) => item.length > 0)
+                    accounts = parseAccounts(stdout)
                     accountsMenu.menu.removeAll()
                     accounts.forEach((account) => {
-                        if (account.slice(-2) == " *") {
-                            account = account.slice(0, -2)
-                            currentAccount = account
+                        if (account.selected) {
+                            currentAccount = account.label
                         }
-                        let accountItem = new PopupMenu.PopupMenuItem(account)
+                        let accountItem = new PopupMenu.PopupMenuItem(account.label)
+                        accountItem.setOrnament(account.selected ? 1 : 0)
                         accountItem.connect('activate', () => {
-                            // find the mail address in the account string
-                            const emailRegex = /[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/;
-                            const email = account.match(emailRegex);
-                            if (email == null) {
-                                myError("failed to extract email from account string")
-                                return
-                            }
-                            cmdTailscaleSwitch(email[0]);
+                            cmdTailscaleSwitch(account);
                         });
                         accountsMenu.menu.addMenuItem(accountItem);
                     });
+                    accountIndicator.label.text = "Account: " + currentAccount;
                 } else {
                     if (unprivileged) {
                         myWarn("retrying tailscale switch --list")
@@ -479,17 +491,16 @@ function cmdTailscaleSwitchList(unprivileged  = true) {
 }
 
 function cmdTailscaleSwitch(account) {
-    if (currentAccount == account) {
-        Main.notify("Already logged in with " + account)
+    if (account.selected) {
+        Main.notify("Already logged in with " + account.label)
         return
-    } else {
-        Main.notify("Switching to " + account)
-        currentAccount = account
     }
+    Main.notify("Switching to " + account.label)
 
     cmdTailscale({
-        args: ["switch", account],
-        addLoginServer: false
+        args: ["switch", account.id],
+        addLoginServer: false,
+        onSuccess: () => cmdTailscaleSwitchList()
     })
 
 }
@@ -522,7 +533,7 @@ function cmdTailscaleStatus() {
     }
 }
 
-function cmdTailscale({args, unprivileged = true, addLoginServer = true}) {
+function cmdTailscale({args, unprivileged = true, addLoginServer = true, onSuccess = null}) {
     let original_args = args
 
     if (addLoginServer) {
@@ -544,13 +555,17 @@ function cmdTailscale({args, unprivileged = true, addLoginServer = true}) {
                         cmdTailscale({
                             args: args[0] == "up" ? original_args.concat(["--operator=" + GLib.get_user_name(), "--reset"]) : original_args,
                             unprivileged: false,
-                            addLoginServer: addLoginServer
+                            addLoginServer: addLoginServer,
+                            onSuccess: onSuccess
                         })
                     } else {
                         myWarn("failed @ cmdTailscale");
                     }
                 } else {
                     cmdTailscaleStatus()
+                    if (onSuccess) {
+                        onSuccess()
+                    }
                 }
             } catch (e) {
                 myError(e);
@@ -787,7 +802,7 @@ export default class TailscaleStatusExtension extends Extension {
         SETTINGS = null;
         accounts = [];
         nodes = [];
-        currentAccount = null;
+        currentAccount = defaultAccount;
         nodesMenu = null;
         accountButton = null;
         accountsMenu = null;
