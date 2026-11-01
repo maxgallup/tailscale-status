@@ -6,6 +6,11 @@
         <summary>Login-Server Url</summary>
         <description>If you are using Headscale for your control server, use your Headscale instance's URL.</description>
     </key>
+    <key name="toggle-shortcut" type="as">
+        <default>[]</default>
+        <summary>Toggle shortcut</summary>
+        <description>Keyboard shortcut to turn Tailscale on or off.</description>
+    </key>
     
   </schema>
 </schemalist>
