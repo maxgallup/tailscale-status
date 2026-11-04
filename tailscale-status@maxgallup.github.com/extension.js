@@ -261,6 +261,19 @@ function setStatus(json) {
     }
 }
 
+// tailscale status failed, e.g. tailscaled is not running.
+function setUnavailable(reason) {
+    myWarn("tailscale status failed: " + reason);
+    icon.gicon = icon_down;
+    statusSwitchItem.setToggleState(false);
+    statusItem.label.text = statusString + "tailscaled unavailable";
+    authItem.label.text = reason;
+    authItem.sensitive = false;
+    nodes = [];
+    nodesTree = { nodes: [], subTrees: {} };
+    setAllItems(false);
+}
+
 function setAllItems(b) {
     shieldItem.sensitive = b;
     acceptRoutesItem.sensitive = b;
@@ -512,6 +525,8 @@ function cmdTailscaleStatus() {
                     refreshExitNodesMenu();
                     refreshSendMenu();
                     refreshNodesMenu();
+                } else {
+                    setUnavailable((stderr || "").trim().split("\n")[0] || "unknown error");
                 }
             } catch (e) {
                 myError(e);
@@ -519,6 +534,7 @@ function cmdTailscaleStatus() {
         });
     } catch (e) {
         myError(e);
+        setUnavailable("tailscale not found");
     }
 }
 
@@ -774,10 +790,10 @@ export default class TailscaleStatusExtension extends Extension {
     enable() {
         SETTINGS = this.getSettings('org.gnome.shell.extensions.tailscale-status');
 
-        cmdTailscaleStatus()
-
         tailscale = new TailscalePopup(this.path);
         Main.panel.addToStatusArea('tailscale', tailscale, 1);
+
+        cmdTailscaleStatus()
     }
 
     disable() {
