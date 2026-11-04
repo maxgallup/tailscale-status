@@ -512,6 +512,34 @@ function cmdTailscaleStatus() {
                     refreshExitNodesMenu();
                     refreshSendMenu();
                     refreshNodesMenu();
+                    cmdTailscalePrefs();
+                }
+            } catch (e) {
+                myError(e);
+            }
+        });
+    } catch (e) {
+        myError(e);
+    }
+}
+
+// Sync the toggles with the current preferences of tailscaled.
+function cmdTailscalePrefs() {
+    try {
+        let proc = Gio.Subprocess.new(
+            ["tailscale", "debug", "prefs"],
+            Gio.SubprocessFlags.STDOUT_PIPE | Gio.SubprocessFlags.STDERR_PIPE
+        );
+        proc.communicate_utf8_async(null, null, (proc, res) => {
+            try {
+                let [, stdout, stderr] = proc.communicate_utf8_finish(res);
+                if (proc.get_successful()) {
+                    const prefs = JSON.parse(stdout);
+                    shieldItem.setToggleState(prefs.ShieldsUp === true);
+                    acceptRoutesItem.setToggleState(prefs.RouteAll === true);
+                    allowLanItem.setToggleState(prefs.ExitNodeAllowLANAccess === true);
+                } else {
+                    myWarn("failed @ cmdTailscalePrefs");
                 }
             } catch (e) {
                 myError(e);
