@@ -83,7 +83,15 @@ let icon_down;
 let icon_up;
 let icon_exit_node;
 let SETTINGS;
+let compactIconId;
 
+
+// Smaller horizontal padding around the panel icon, like compact AppIndicators.
+function updateIconPadding() {
+    tailscale.style = SETTINGS.get_boolean('compact-icon')
+        ? '-natural-hpadding: 4px; -minimum-hpadding: 4px;'
+        : null;
+}
 
 function myWarn(string) {
     console.log("🟡 [tailscale-status]: " + string);
@@ -778,10 +786,15 @@ export default class TailscaleStatusExtension extends Extension {
 
         tailscale = new TailscalePopup(this.path);
         Main.panel.addToStatusArea('tailscale', tailscale, 1);
+
+        updateIconPadding();
+        compactIconId = SETTINGS.connect('changed::compact-icon', updateIconPadding);
     }
 
     disable() {
 
+        SETTINGS.disconnect(compactIconId);
+        compactIconId = null;
         tailscale.destroy();
         tailscale = null;
         SETTINGS = null;

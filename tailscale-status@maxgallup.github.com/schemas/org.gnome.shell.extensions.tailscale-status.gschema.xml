@@ -6,6 +6,11 @@
         <summary>Login-Server Url</summary>
         <description>If you are using Headscale for your control server, use your Headscale instance's URL.</description>
     </key>
+    <key name="compact-icon" type="b">
+        <default>false</default>
+        <summary>Compact panel icon</summary>
+        <description>Reduce the padding around the icon in the top bar.</description>
+    </key>
     
   </schema>
 </schemalist>
