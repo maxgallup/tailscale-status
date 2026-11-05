@@ -542,7 +542,7 @@ function cmdTailscale({args, unprivileged = true, addLoginServer = true}) {
                 if (!proc.get_successful()) {
                     if (unprivileged) {
                         cmdTailscale({
-                            args: args[0] == "up" ? original_args.concat(["--operator=" + GLib.get_user_name(), "--reset"]) : original_args,
+                            args: args[0] == "up" && args.length > 1 ? original_args.concat(["--operator=" + GLib.get_user_name(), "--reset"]) : original_args,
                             unprivileged: false,
                             addLoginServer: addLoginServer
                         })
@@ -640,7 +640,8 @@ const TailscalePopup = GObject.registerClass(
             statusSwitchItem = new PopupMenu.PopupSwitchMenuItem("Tailscale", false);
             statusSwitchItem.connect('activate', () => {
                 if (statusSwitchItem.state) {
-                    cmdTailscale({ args: ["up"] });
+                    // A bare `tailscale up` keeps the saved prefs, e.g. the exit node.
+                    cmdTailscale({ args: ["up"], addLoginServer: false });
                 } else {
                     cmdTailscale({
                         args: ["down"],
