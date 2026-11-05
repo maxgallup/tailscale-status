@@ -6,6 +6,11 @@
         <summary>Login-Server Url</summary>
         <description>If you are using Headscale for your control server, use your Headscale instance's URL.</description>
     </key>
+    <key name="tailscale-command" type="s">
+        <default>"tailscale"</default>
+        <summary>Tailscale command</summary>
+        <description>Path or command used to run the tailscale CLI, e.g. a wrapper exported from a distrobox.</description>
+    </key>
     
   </schema>
 </schemalist>
