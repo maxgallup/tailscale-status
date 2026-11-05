@@ -7,6 +7,8 @@ import * as Util from 'resource:///org/gnome/shell/misc/util.js';
 import GObject from 'gi://GObject';
 import GLib from 'gi://GLib';
 import Gio from 'gi://Gio';
+import Meta from 'gi://Meta';
+import Shell from 'gi://Shell';
 
 import * as PanelMenu from 'resource:///org/gnome/shell/ui/panelMenu.js';
 import * as PopupMenu from 'resource:///org/gnome/shell/ui/popupMenu.js';
@@ -561,6 +563,17 @@ function cmdTailscale({args, unprivileged = true, addLoginServer = true}) {
     }
 }
 
+function setTailscaleUp(up) {
+    if (up) {
+        cmdTailscale({ args: ["up"] });
+    } else {
+        cmdTailscale({
+            args: ["down"],
+            addLoginServer: false
+        });
+    }
+}
+
 function cmdTailscaleRecFiles() {
     try {
         let proc = Gio.Subprocess.new(
@@ -639,14 +652,7 @@ const TailscalePopup = GObject.registerClass(
             // ------ MAIN SWITCH ------
             statusSwitchItem = new PopupMenu.PopupSwitchMenuItem("Tailscale", false);
             statusSwitchItem.connect('activate', () => {
-                if (statusSwitchItem.state) {
-                    cmdTailscale({ args: ["up"] });
-                } else {
-                    cmdTailscale({
-                        args: ["down"],
-                        addLoginServer: false
-                    });
-                }
+                setTailscaleUp(statusSwitchItem.state);
             })
 
             // ------ UPDATE ACCOUNTS ------
@@ -778,10 +784,21 @@ export default class TailscaleStatusExtension extends Extension {
 
         tailscale = new TailscalePopup(this.path);
         Main.panel.addToStatusArea('tailscale', tailscale, 1);
+
+        Main.wm.addKeybinding('toggle-shortcut', SETTINGS, Meta.KeyBindingFlags.NONE,
+            Shell.ActionMode.NORMAL | Shell.ActionMode.OVERVIEW, () => {
+                if (statusSwitchItem.sensitive) {
+                    const up = !statusSwitchItem.state;
+                    statusSwitchItem.setToggleState(up);
+                    Main.notify("Tailscale " + (up ? "up" : "down"));
+                    setTailscaleUp(up);
+                }
+            });
     }
 
     disable() {
 
+        Main.wm.removeKeybinding('toggle-shortcut');
         tailscale.destroy();
         tailscale = null;
         SETTINGS = null;
