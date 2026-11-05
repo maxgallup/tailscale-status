@@ -1,6 +1,7 @@
 
 import Adw from 'gi://Adw';
 import Gtk from 'gi://Gtk';
+import Gio from 'gi://Gio';
 
 import {ExtensionPreferences, gettext as _} from 'resource:///org/gnome/Shell/Extensions/js/extensions/prefs.js';
 
@@ -27,6 +28,13 @@ export default class TailscaleStatusExtensionPreferences extends ExtensionPrefer
             
           });
         row.add_suffix(textBox);
+
+        const compactRow = new Adw.SwitchRow({
+            title: 'Compact Panel Icon',
+            subtitle: 'Reduce the padding around the icon in the top bar'
+        });
+        group.add(compactRow);
+        settings.bind('compact-icon', compactRow, 'active', Gio.SettingsBindFlags.DEFAULT);
     
         window.add(page);
     }
