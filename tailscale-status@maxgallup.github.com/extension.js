@@ -94,6 +94,24 @@ function myError(string) {
 }
 
 
+// The tailscale command, e.g. a wrapper when tailscale is installed in a distrobox.
+function tailscaleArgv() {
+    const cmd = SETTINGS.get_string('tailscale-command').trim();
+    if (cmd.length == 0) {
+        return ["tailscale"];
+    }
+    try {
+        let argv = GLib.shell_parse_argv(cmd)[1];
+        if (argv[0].startsWith("~/")) {
+            argv[0] = GLib.get_home_dir() + argv[0].slice(1);
+        }
+        return argv;
+    } catch (e) {
+        myError("invalid tailscale command: " + e);
+        return ["tailscale"];
+    }
+}
+
 function extractNodeInfo(json) {
     nodes = [];
     nodesTree = { nodes: [], subTrees: {} };
@@ -429,7 +447,7 @@ function sendFiles(dest) {
 
 function cmdTailscaleSwitchList(unprivileged  = true) {
     let args = ["switch", "--list"]
-    let command = (unprivileged ? ["tailscale"] : ["pkexec", "tailscale"]).concat(args);
+    let command = (unprivileged ? [] : ["pkexec"]).concat(tailscaleArgv(), args);
 
     try {
         let proc = Gio.Subprocess.new(
@@ -498,7 +516,7 @@ function cmdTailscaleStatus() {
     try {
         let proc = Gio.Subprocess.new(
             // ["curl", "--silent", "--unix-socket", "/run/tailscale/tailscaled.sock", "http://localhost/localapi/v0/status" ],
-            ["tailscale", "status", "--json"],
+            tailscaleArgv().concat(["status", "--json"]),
             Gio.SubprocessFlags.STDOUT_PIPE | Gio.SubprocessFlags.STDERR_PIPE
         );
         proc.communicate_utf8_async(null, null, (proc, res) => {
@@ -529,7 +547,7 @@ function cmdTailscale({args, unprivileged = true, addLoginServer = true}) {
         args = args.concat(["--login-server=" + SETTINGS.get_string('login-server')])
     }
 
-    let command = (unprivileged ? ["tailscale"] : ["pkexec", "tailscale"]).concat(args);
+    let command = (unprivileged ? [] : ["pkexec"]).concat(tailscaleArgv(), args);
 
     try {
         let proc = Gio.Subprocess.new(
@@ -564,7 +582,7 @@ function cmdTailscale({args, unprivileged = true, addLoginServer = true}) {
 function cmdTailscaleRecFiles() {
     try {
         let proc = Gio.Subprocess.new(
-            ["pkexec", "tailscale", "file", "get", downloads_path],
+            ["pkexec"].concat(tailscaleArgv(), ["file", "get", downloads_path]),
             Gio.SubprocessFlags.STDOUT_PIPE | Gio.SubprocessFlags.STDERR_PIPE
         );
         proc.communicate_utf8_async(null, null, (proc, res) => {

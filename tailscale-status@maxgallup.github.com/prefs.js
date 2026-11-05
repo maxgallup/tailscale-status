@@ -27,6 +27,20 @@ export default class TailscaleStatusExtensionPreferences extends ExtensionPrefer
             
           });
         row.add_suffix(textBox);
+
+        const commandRow = new Adw.ActionRow({
+            title: 'Tailscale Command',
+            subtitle: 'e.g. ~/.local/bin/tailscale exported from a distrobox'
+        });
+        group.add(commandRow);
+        const commandBox = new Gtk.Entry({
+            buffer: new Gtk.EntryBuffer()
+        });
+        commandBox.set_text(settings.get_string('tailscale-command'));
+        commandBox.connect("changed", function (w) {
+            settings.set_string('tailscale-command', w.get_buffer().text)
+          });
+        commandRow.add_suffix(commandBox);
     
         window.add(page);
     }
