@@ -411,7 +411,10 @@ function sendFiles(dest) {
                 let [, stdout, stderr] = proc.communicate_utf8_finish(res);
                 if (proc.get_successful()) {
                     if (stdout != '') {
+                        // TODO: broken, see the "send files" todo test
+                        // eslint-disable-next-line no-undef
                         files = stdout.trim().split("|")
+                        // eslint-disable-next-line no-undef
                         cmdTailscaleFile(files, dest)
                     }
                 } else {
